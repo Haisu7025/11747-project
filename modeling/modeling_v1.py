@@ -137,7 +137,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         super().__init__(config)
 
         self.electra = ElectraModel(config)
-        self.ocn = OCN(config, self.electra)
+        self.ocn = OCN(config)
         self.num_decoupling = num_decoupling
 
         self.localMHA = nn.ModuleList([MHA(config) for _ in range(num_decoupling)])
@@ -185,7 +185,8 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         turn_ids = turn_ids.view(-1, turn_ids.size(-1)) if turn_ids is not None else None
         
         turn_ids = turn_ids.unsqueeze(-1).repeat([1,1,turn_ids.size(1)])
-        correlation_output = self.ocn(input_ids, token_type_ids, attention_mask, doc_final_pos, num_labels)
+        last_layer = self.electra(input_ids, token_type_ids, attention_mask)['last_hidden_state']
+        correlation_output = self.ocn(input_ids, attention_mask, doc_final_pos, num_labels, last_layer)
         #print("sep_pos:", sep_pos)
         
         position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None

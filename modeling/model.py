@@ -87,10 +87,9 @@ class Attention(nn.Module):
 # class OCN(ElectraPreTrainedModel):
 class OCN(nn.Module):
 
-    def __init__(self, config, model):
+    def __init__(self, config):
         # self.electra = ElectraModel(config)
         super().__init__()
-        self.electra = model
 
         self.attn_sim = TriLinear(config.hidden_size)
         self.attention = Attention(sim=self.attn_sim)
@@ -111,12 +110,9 @@ class OCN(nn.Module):
         self.hidden_size = config.hidden_size
         # self.aggregation_layer = torch.nn.Conv1d(in_channels=2, out_channels=1, kernel_size=29)
 
-    def forward(self, input_ids, token_type_ids, attention_mask, doc_final_pos, num_label):
+    def forward(self, input_ids, attention_mask, doc_final_pos, num_label, last_layer):
         bsz = input_ids.size(0) // num_label
         doc_final_pos = doc_final_pos[0][0]
-
-        last_layer = self.electra(input_ids, token_type_ids, attention_mask)['last_hidden_state']
-
 
         doc_enc = last_layer[:, 0 : doc_final_pos-1, :]
         opt_enc = last_layer[:, doc_final_pos-1:, :]
