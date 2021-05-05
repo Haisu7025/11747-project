@@ -135,7 +135,7 @@ class FuseLayer(nn.Module):
 class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
     def __init__(self, config, num_rnn = 1, num_decoupling = 1):
         super().__init__(config)
-
+        print("Using electra")
         self.electra = ElectraModel(config)
         self.ocn = OCN(config)
         self.num_decoupling = num_decoupling
@@ -347,6 +347,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         output_hidden_states=None,
         doc_final_pos=None
     ):
+        print("Using bert")
         num_labels = input_ids.shape[1] if input_ids is not None else inputs_embeds.shape[1]
 
         input_ids = input_ids.view(-1, input_ids.size(-1)) if input_ids is not None else None 
@@ -482,7 +483,7 @@ class RobertaForMultipleChoicePlus(BertPreTrainedModel):
     # num_label=4, max_doc_len, max_query_len, max_option_len
     def __init__(self, config, num_rnn = 1, num_decoupling = 1):
         super().__init__(config)
-
+        print("Using roberta")
         self.roberta = RobertaModel(config)
         self.num_decoupling = num_decoupling
 
