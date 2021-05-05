@@ -285,7 +285,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         final_state = torch.cat((context_final_states, sa_final_states), 1)
 
         pooled_output = self.pooler_activation(self.pooler(final_state))
-        pooled_output += correlation_output
+        pooled_output = correlation_output + pooled_output
         pooled_output = self.dropout(pooled_output)
 
         if num_labels > 2:
