@@ -87,7 +87,7 @@ class Attention(nn.Module):
 # class OCN(ElectraPreTrainedModel):
 class OCN(nn.Module):
 
-    def __init__(self, config, model, num_label=4):
+    def __init__(self, config, model):
         # self.electra = ElectraModel(config)
         super().__init__()
         self.electra = model
@@ -108,12 +108,11 @@ class OCN(nn.Module):
         self.opt_selfattn_fc = nn.Linear(config.hidden_size * 4, config.hidden_size, bias=True)
 
         self.score_fc = nn.Linear(config.hidden_size, 1)
-        self.num_labels = num_label
         self.hidden_size = config.hidden_size
         # self.aggregation_layer = torch.nn.Conv1d(in_channels=2, out_channels=1, kernel_size=29)
 
-    def forward(self, input_ids, token_type_ids, attention_mask, doc_final_pos):
-        bsz = input_ids.size(0) // self.num_labels
+    def forward(self, input_ids, token_type_ids, attention_mask, doc_final_pos, num_label):
+        bsz = input_ids.size(0) // num_label
         doc_final_pos = doc_final_pos[0][0]
 
         last_layer = self.electra(input_ids, token_type_ids, attention_mask)['last_hidden_state']
@@ -125,17 +124,17 @@ class OCN(nn.Module):
         doc_mask = attention_mask[:, 0 : doc_final_pos-1] > 0
         opt_mask = attention_mask[:, doc_final_pos-1:] > 0
 
-        opt_mask = opt_mask.view(bsz, self.num_labels, opt_total_len)
-        opt_enc = opt_enc.view(bsz, self.num_labels, opt_total_len, self.hidden_size)
+        opt_mask = opt_mask.view(bsz, num_label, opt_total_len)
+        opt_enc = opt_enc.view(bsz, num_label, opt_total_len, self.hidden_size)
 
         # Option Comparison
         correlation_list = []
-        for i in range(self.num_labels):
+        for i in range(num_label):
             cur_opt = opt_enc[:, i, :, :]
             cur_mask = opt_mask[:, i, :]
 
             comp_info = []
-            for j in range(self.num_labels):
+            for j in range(num_label):
                 if j == i:
                     continue
 
@@ -152,8 +151,8 @@ class OCN(nn.Module):
         correlation_list = [correlation.unsqueeze(1) for correlation in correlation_list]
         opt_correlation = torch.cat(correlation_list, dim=1)
 
-        opt_mask = opt_mask.view(bsz * self.num_labels, opt_total_len)
-        opt_enc = opt_enc.view(bsz * self.num_labels, opt_total_len, self.hidden_size)
+        opt_mask = opt_mask.view(bsz * num_label, opt_total_len)
+        opt_enc = opt_enc.view(bsz * num_label, opt_total_len, self.hidden_size)
         option = torch.add(opt_enc, torch.squeeze(opt_correlation, dim=0))
         # option = self.aggregation_layer(concat_encodings)
 
@@ -166,13 +165,13 @@ class OCN(nn.Module):
         fusion = F.relu(fusion)
 
         fusion = fusion.masked_fill(
-            (~opt_mask).unsqueeze(-1).expand(bsz * self.num_labels, opt_total_len, self.hidden_size),
+            (~opt_mask).unsqueeze(-1).expand(bsz * num_label, opt_total_len, self.hidden_size),
             -float('inf'))
         fusion, _ = fusion.max(dim=1)
         # 4, 768
         return fusion
 
-        # logits = self.score_fc(fusion).view(bsz, self.num_labels)
+        # logits = self.score_fc(fusion).view(bsz, num_label)
         #
         # if labels is not None:
         #     loss_fct = CrossEntropyLoss()

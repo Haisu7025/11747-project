@@ -185,7 +185,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         turn_ids = turn_ids.view(-1, turn_ids.size(-1)) if turn_ids is not None else None
         
         turn_ids = turn_ids.unsqueeze(-1).repeat([1,1,turn_ids.size(1)])
-        correlation_output = self.ocn(input_ids, token_type_ids, attention_mask, doc_final_pos)
+        correlation_output = self.ocn(input_ids, token_type_ids, attention_mask, doc_final_pos, num_labels)
         #print("sep_pos:", sep_pos)
         
         position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
