@@ -137,6 +137,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         super().__init__(config)
 
         self.electra = ElectraModel(config)
+        self.ocn = OCN(config, self.electra)
         self.num_decoupling = num_decoupling
 
         self.localMHA = nn.ModuleList([MHA(config) for _ in range(num_decoupling)])
@@ -155,6 +156,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
         self.classifier2 = nn.Linear(config.hidden_size, 2)
+        self.aggregation_layer = torch.nn.Conv1d(in_channels=2, out_channels=1, kernel_size=1)
 
         self.init_weights()
 
@@ -171,6 +173,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         labels=None,
         output_attentions=None,
         output_hidden_states=None,
+        doc_final_pos=None
     ):
         num_labels = input_ids.shape[1] if input_ids is not None else inputs_embeds.shape[1]
 
@@ -182,7 +185,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         turn_ids = turn_ids.view(-1, turn_ids.size(-1)) if turn_ids is not None else None
         
         turn_ids = turn_ids.unsqueeze(-1).repeat([1,1,turn_ids.size(1)])
-        
+        correlation_output = self.ocn(input_ids, token_type_ids, attention_mask, doc_final_pos)
         #print("sep_pos:", sep_pos)
         
         position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
@@ -282,6 +285,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         final_state = torch.cat((context_final_states, sa_final_states), 1)
 
         pooled_output = self.pooler_activation(self.pooler(final_state))
+        pooled_output += correlation_output
         pooled_output = self.dropout(pooled_output)
 
         if num_labels > 2:
@@ -352,7 +356,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         turn_ids = turn_ids.view(-1, turn_ids.size(-1)) if turn_ids is not None else None
         
         turn_ids = turn_ids.unsqueeze(-1).repeat([1,1,turn_ids.size(1)])
-        
+
         #print("sep_pos:", sep_pos)
         
         position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
@@ -497,6 +501,7 @@ class RobertaForMultipleChoicePlus(BertPreTrainedModel):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
         self.classifier2 = nn.Linear(config.hidden_size, 2)
+        self.aggregation_layer = torch.nn.Conv1d(in_channels=2, out_channels=1, kernel_size=1)
 
         self.init_weights()
 
@@ -625,8 +630,7 @@ class RobertaForMultipleChoicePlus(BertPreTrainedModel):
 
         pooled_output = self.pooler_activation(self.pooler(final_state))
         pooled_output = self.dropout(pooled_output)
-        print(pooled_output.shape)
-        raise NotImplementedError()
+
         if num_labels > 2:
             logits = self.classifier(pooled_output)
         else:
