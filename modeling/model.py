@@ -78,7 +78,8 @@ class Attention(nn.Module):
         if query_mask is not None and key_mask is not None:
             kq_weight = kq_weight.masked_fill((~mask), 0.)
 
-        co_weight = torch.matmul(attn_weight, torch.transpose(kq_weight, -1, -2))
+        co_weight = torch.matmul(attn_weight,
+                                 torch.transpose(kq_weight, -1, -2))
         co_attn = torch.matmul(co_weight, query)
 
         return (attn, attn_weight), (co_attn, co_weight)
@@ -93,32 +94,40 @@ class OCN(nn.Module):
 
         self.attn_sim = TriLinear(config.hidden_size)
         self.attention = Attention(sim=self.attn_sim)
-        self.attn_fc = nn.Linear(config.hidden_size * 3, config.hidden_size, bias=True)
+        self.attn_fc = nn.Linear(config.hidden_size * 3, config.hidden_size,
+                                 bias=True)
 
         self.opt_attn_sim = TriLinear(config.hidden_size)
         self.opt_attention = Attention(sim=self.opt_attn_sim)
-        self.comp_fc = nn.Linear(config.hidden_size * 7, config.hidden_size, bias=True)
+        self.comp_fc = nn.Linear(config.hidden_size * 7, config.hidden_size,
+                                 bias=True)
 
-        self.query_attentive_pooling = AttentivePooling(input_size=config.hidden_size)
-        self.gate_fc = nn.Linear(config.hidden_size * 3, config.hidden_size, bias=True)
+        self.query_attentive_pooling = AttentivePooling(
+            input_size=config.hidden_size)
+        self.gate_fc = nn.Linear(config.hidden_size * 3, config.hidden_size,
+                                 bias=True)
 
         self.opt_selfattn_sim = TriLinear(config.hidden_size)
         self.opt_self_attention = Attention(sim=self.opt_selfattn_sim)
-        self.opt_selfattn_fc = nn.Linear(config.hidden_size * 4, config.hidden_size, bias=True)
+        self.opt_selfattn_fc = nn.Linear(config.hidden_size * 4,
+                                         config.hidden_size, bias=True)
 
         self.score_fc = nn.Linear(config.hidden_size, 1)
         self.hidden_size = config.hidden_size
-        # self.aggregation_layer = torch.nn.Conv1d(in_channels=2, out_channels=1, kernel_size=29)
+        self.aggregation_layer = torch.nn.Linear(2 * config.hidden_size,
+                                                 config.hidden_size)
+        self.aggregation_activation = torch.nn.Tanh()
 
-    def forward(self, input_ids, attention_mask, doc_final_pos, num_label, last_layer):
+    def forward(self, input_ids, attention_mask, doc_final_pos, num_label,
+                last_layer):
         bsz = input_ids.size(0) // num_label
         doc_final_pos = doc_final_pos[0][0]
 
-        doc_enc = last_layer[:, 0 : doc_final_pos-1, :]
-        opt_enc = last_layer[:, doc_final_pos-1:, :]
+        doc_enc = last_layer[:, 0: doc_final_pos - 1, :]
+        opt_enc = last_layer[:, doc_final_pos - 1:, :]
         opt_total_len = opt_enc.size(1)
-        doc_mask = attention_mask[:, 0 : doc_final_pos-1] > 0
-        opt_mask = attention_mask[:, doc_final_pos-1:] > 0
+        doc_mask = attention_mask[:, 0: doc_final_pos - 1] > 0
+        opt_mask = attention_mask[:, doc_final_pos - 1:] > 0
 
         opt_mask = opt_mask.view(bsz, num_label, opt_total_len)
         opt_enc = opt_enc.view(bsz, num_label, opt_total_len, self.hidden_size)
@@ -137,32 +146,42 @@ class OCN(nn.Module):
                 tmp_opt = opt_enc[:, j, :, :]
                 tmp_mask = opt_mask[:, j, :]
 
-                (attn, _), _ = self.opt_attention(cur_opt, tmp_opt, tmp_opt, cur_mask, tmp_mask)
+                (attn, _), _ = self.opt_attention(cur_opt, tmp_opt, tmp_opt,
+                                                  cur_mask, tmp_mask)
                 comp_info.append(cur_opt * attn)
                 comp_info.append(cur_opt - attn)
 
-            correlation = torch.tanh(self.comp_fc(torch.cat([cur_opt] + comp_info, dim=-1)))
+            correlation = torch.tanh(
+                self.comp_fc(torch.cat([cur_opt] + comp_info, dim=-1)))
             correlation_list.append(correlation)
 
-        correlation_list = [correlation.unsqueeze(1) for correlation in correlation_list]
+        correlation_list = [correlation.unsqueeze(1) for correlation in
+                            correlation_list]
         opt_correlation = torch.cat(correlation_list, dim=1)
 
         opt_mask = opt_mask.view(bsz * num_label, opt_total_len)
         opt_enc = opt_enc.view(bsz * num_label, opt_total_len, self.hidden_size)
         _, _, dim2, dim3 = opt_correlation.shape
-        option = torch.add(opt_enc, opt_correlation.view(-1, dim2, dim3))
+        features = torch.cat([opt_enc,
+                              opt_correlation.view(-1, dim2, dim3)], dim=-1)
+        option = self.aggregation_activation(
+            self.aggregation_layer(features))
         # option = self.aggregation_layer(concat_encodings)
 
-        (attn, _), (coattn, _) = self.attention(option, doc_enc, doc_enc, opt_mask, doc_mask)
+        (attn, _), (coattn, _) = self.attention(option, doc_enc, doc_enc,
+                                                opt_mask, doc_mask)
         fusion = self.attn_fc(torch.cat((option, attn, coattn), -1))
         fusion = F.relu(fusion)
 
-        (attn, _), _ = self.opt_self_attention(fusion, fusion, fusion, opt_mask, opt_mask)
-        fusion = self.opt_selfattn_fc(torch.cat((fusion, attn, fusion * attn, fusion - attn), -1))
+        (attn, _), _ = self.opt_self_attention(fusion, fusion, fusion, opt_mask,
+                                               opt_mask)
+        fusion = self.opt_selfattn_fc(
+            torch.cat((fusion, attn, fusion * attn, fusion - attn), -1))
         fusion = F.relu(fusion)
 
         fusion = fusion.masked_fill(
-            (~opt_mask).unsqueeze(-1).expand(bsz * num_label, opt_total_len, self.hidden_size),
+            (~opt_mask).unsqueeze(-1).expand(bsz * num_label, opt_total_len,
+                                             self.hidden_size),
             -float('inf'))
         fusion, _ = fusion.max(dim=1)
         # 4, 768

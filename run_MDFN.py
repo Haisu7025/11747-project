@@ -610,19 +610,32 @@ def ComputeR2_1(scores, labels, count=2):
 
 def Compute_R4_2(preds, labels):
     p2 = 0
+    error_count = 0
     for i in range(len(preds)):
         j = sorted(list(preds[i]), reverse=True)
-        if j.index(preds[i][labels[i]]) <= 1:
-            p2 += 1
+        try:
+            if j.index(preds[i][labels[i]]) <= 1:
+                p2 += 1
+        except Exception as e:
+            print(e)
+            print("sample {}; pred: {}; label: {}".format(i, j, labels[i]))
+            error_count += 1
+    print("Error count for R4_2: {}".format(error_count))
     return p2 / len(preds)
 
 
 def Compute_MRR(preds, labels):
     mrr = 0
+    error_count = 0
     for i in range(len(preds)):
         j = sorted(list(preds[i]), reverse=True)
-        mrr += 1 / (j.index(preds[i][labels[i]]) + 1)
-
+        try:
+            mrr += 1 / (j.index(preds[i][labels[i]]) + 1)
+        except Exception as e:
+            print(e)
+            print("sample {}; pred: {}; label: {}".format(i, j, labels[i]))
+            error_count += 1
+    print("Error count for MRR: {}".format(error_count))
     return mrr / len(preds)
 
 
