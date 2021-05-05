@@ -36,7 +36,7 @@ def split_bert_sequence(seq, seq1_lengths, max_seq1_length, seq2_lengths, max_se
     seq2 = torch.gather(seq, dim=1, index=seq_index.unsqueeze(2).expand(batch_size, index_len, dim))
     seq2_mask = sequence_mask(seq2_lengths, max_seq2_length)
     seq2 = seq2.float().masked_fill(
-        (1 - seq2_mask).unsqueeze(2),
+        (~seq2_mask).unsqueeze(2),
         float(pad),
     ).type_as(seq2)
     return cls, seq1, seq2

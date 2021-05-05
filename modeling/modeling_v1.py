@@ -5,6 +5,7 @@ from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss, Conv1d
 import torch.nn.functional as F
 import math
 import torch.nn.utils.rnn as rnn_utils
+from modeling.model import *
 
 BertLayerNorm = torch.nn.LayerNorm
 
@@ -304,6 +305,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         super().__init__(config)
 
         self.bert = BertModel(config)
+        self.ocn = OCN(config, self.bert)
         self.num_decoupling = num_decoupling
 
         self.localMHA = nn.ModuleList([MHA(config) for _ in range(num_decoupling)])
@@ -322,7 +324,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
         self.classifier2 = nn.Linear(config.hidden_size, 2)
-
+        self.aggregation_layer = torch.nn.Conv1d(in_channels=2, out_channels=1, kernel_size=1)
         self.init_weights()
 
     def forward(
@@ -338,6 +340,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         labels=None,
         output_attentions=None,
         output_hidden_states=None,
+        doc_final_pos=None
     ):
         num_labels = input_ids.shape[1] if input_ids is not None else inputs_embeds.shape[1]
 
@@ -358,7 +361,8 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
             if inputs_embeds is not None
             else None
         )
-        
+        correlation_output = self.ocn(input_ids, token_type_ids, attention_mask, doc_final_pos)
+        # outputs2 = self.ocn(input_ids, token_type_ids, attention_mask, doc_final_pos)
         #print("size of sequence_output:", sequence_output.size())
         attention_mask = attention_mask.unsqueeze(1).unsqueeze(2) # (batch_size * num_choice, 1, 1, seq_len)
         attention_mask = attention_mask.to(dtype=self.dtype)  # fp16 compatibility
@@ -408,6 +412,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
             output_hidden_states=output_hidden_states,
         )
 
+
         sequence_output = outputs[0] # (batch_size * num_choice, seq_len, hidden_size)
 
 
@@ -451,6 +456,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         pooled_output = self.pooler_activation(self.pooler(final_state))
         pooled_output = self.dropout(pooled_output)
 
+        pooled_output = correlation_output + pooled_output
         if num_labels > 2:
             logits = self.classifier(pooled_output)
         else:
@@ -468,6 +474,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         return outputs #(loss), reshaped_logits, (hidden_states), (attentions)
 
 class RobertaForMultipleChoicePlus(BertPreTrainedModel):
+    # num_label=4, max_doc_len, max_query_len, max_option_len
     def __init__(self, config, num_rnn = 1, num_decoupling = 1):
         super().__init__(config)
 
@@ -618,7 +625,8 @@ class RobertaForMultipleChoicePlus(BertPreTrainedModel):
 
         pooled_output = self.pooler_activation(self.pooler(final_state))
         pooled_output = self.dropout(pooled_output)
-
+        print(pooled_output.shape)
+        raise NotImplementedError()
         if num_labels > 2:
             logits = self.classifier(pooled_output)
         else:

@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from transformers import BertPreTrainedModel, BertModel, ElectraPreTrainedModel, \
     ElectraModel
-from util import sequence_mask, split_bert_sequence
+from modeling.util import sequence_mask, split_bert_sequence
 
 
 class AttentivePooling(nn.Module):
@@ -21,7 +21,7 @@ class AttentivePooling(nn.Module):
     def forward(self, input, mask):
         bsz, length, size = input.size()
         score = self.fc(input.contiguous().view(-1, size)).view(bsz, length)
-        score = score.masked_fill((1 - mask), -float('inf'))
+        score = score.masked_fill((~mask), -float('inf'))
         prob = F.softmax(score, dim=-1)
         attn = torch.bmm(prob.unsqueeze(1), input)
         return attn
@@ -66,17 +66,17 @@ class Attention(nn.Module):
         logit = self.sim(query, key)
         if query_mask is not None and key_mask is not None:
             mask = query_mask.unsqueeze(ndim - 1) * key_mask.unsqueeze(ndim - 2)
-            logit = logit.masked_fill((1 - mask), -float('inf'))
+            logit = logit.masked_fill((~mask), -float('inf'))
 
         attn_weight = F.softmax(logit, dim=-1)
         if query_mask is not None and key_mask is not None:
-            attn_weight = attn_weight.masked_fill((1-mask), 0.)
+            attn_weight = attn_weight.masked_fill((~mask), 0.)
 
         attn = torch.matmul(attn_weight, value)
 
         kq_weight = F.softmax(logit, dim=1)
         if query_mask is not None and key_mask is not None:
-            kq_weight = kq_weight.masked_fill((1 - mask), 0.)
+            kq_weight = kq_weight.masked_fill((~mask), 0.)
 
         co_weight = torch.matmul(attn_weight, torch.transpose(kq_weight, -1, -2))
         co_attn = torch.matmul(co_weight, query)
@@ -85,12 +85,12 @@ class Attention(nn.Module):
 
 
 # class OCN(ElectraPreTrainedModel):
-class OCN(BertPreTrainedModel):
+class OCN(nn.Module):
 
-    def __init__(self, config, num_label, max_doc_len, max_query_len, max_option_len):
-        super(OCN, self).__init__(config)
+    def __init__(self, config, model, num_label=4):
         # self.electra = ElectraModel(config)
-        self.electra = BertModel(config)
+        super().__init__()
+        self.electra = model
 
         self.attn_sim = TriLinear(config.hidden_size)
         self.attention = Attention(sim=self.attn_sim)
@@ -110,34 +110,20 @@ class OCN(BertPreTrainedModel):
         self.score_fc = nn.Linear(config.hidden_size, 1)
         self.num_labels = num_label
         self.hidden_size = config.hidden_size
+        # self.aggregation_layer = torch.nn.Conv1d(in_channels=2, out_channels=1, kernel_size=29)
 
-        self.max_doc_len = max_doc_len
-        self.max_query_len = max_query_len
-        self.max_option_len = max_option_len
-
-    def forward(self, input_ids, token_type_ids, attention_mask, query_len, opt_len, labels=None):
-        bsz = input_ids.size(0)
-        input_ids = input_ids.view(bsz * self.num_labels, -1)
-        token_type_ids = token_type_ids.view(bsz * self.num_labels, -1)
-        attention_mask = attention_mask.view(bsz * self.num_labels, -1)
+    def forward(self, input_ids, token_type_ids, attention_mask, doc_final_pos):
+        bsz = input_ids.size(0) // self.num_labels
+        doc_final_pos = doc_final_pos[0][0]
 
         last_layer = self.electra(input_ids, token_type_ids, attention_mask)['last_hidden_state']
-        # last_layer = all_encoder_layers[-1]
 
-        doc_enc = last_layer[:, 0 : self.max_doc_len + 2, :]
-        opt_enc = last_layer[:, self.max_doc_len + 2:, :]
 
-        opt_len = opt_len.view(-1)
-        query_len = query_len.view(-1)
-        _, query_enc, _ = split_bert_sequence(opt_enc, query_len, self.max_query_len, opt_len, self.max_option_len, has_cls=False)
-
-        query_total_len = query_enc.size(1)
-        query_mask = sequence_mask(query_len, query_total_len)
-        query_attn = self.query_attentive_pooling(query_enc, query_mask)
-
+        doc_enc = last_layer[:, 0 : doc_final_pos-1, :]
+        opt_enc = last_layer[:, doc_final_pos-1:, :]
         opt_total_len = opt_enc.size(1)
-        opt_mask = attention_mask[:, self.max_doc_len + 2:] > 0
-        doc_mask = attention_mask[:, 0 : self.max_doc_len + 2] > 0
+        doc_mask = attention_mask[:, 0 : doc_final_pos-1] > 0
+        opt_mask = attention_mask[:, doc_final_pos-1:] > 0
 
         opt_mask = opt_mask.view(bsz, self.num_labels, opt_total_len)
         opt_enc = opt_enc.view(bsz, self.num_labels, opt_total_len, self.hidden_size)
@@ -168,9 +154,8 @@ class OCN(BertPreTrainedModel):
 
         opt_mask = opt_mask.view(bsz * self.num_labels, opt_total_len)
         opt_enc = opt_enc.view(bsz * self.num_labels, opt_total_len, self.hidden_size)
-        opt_correlation = opt_correlation.contiguous().view(bsz * self.num_labels, opt_total_len, self.hidden_size)
-        gate = torch.sigmoid(self.gate_fc(torch.cat((opt_enc, opt_correlation, query_attn.expand_as(opt_enc)), -1)))
-        option = opt_enc * gate + opt_correlation * (1.0 - gate)
+        option = torch.add(opt_enc, torch.squeeze(opt_correlation, dim=0))
+        # option = self.aggregation_layer(concat_encodings)
 
         (attn, _), (coattn, _) = self.attention(option, doc_enc, doc_enc, opt_mask, doc_mask)
         fusion = self.attn_fc(torch.cat((option, attn, coattn), -1))
@@ -181,15 +166,17 @@ class OCN(BertPreTrainedModel):
         fusion = F.relu(fusion)
 
         fusion = fusion.masked_fill(
-            (1 - opt_mask).unsqueeze(-1).expand(bsz * self.num_labels, opt_total_len, self.hidden_size),
+            (~opt_mask).unsqueeze(-1).expand(bsz * self.num_labels, opt_total_len, self.hidden_size),
             -float('inf'))
         fusion, _ = fusion.max(dim=1)
+        # 4, 768
+        return fusion
 
-        logits = self.score_fc(fusion).view(bsz, self.num_labels)
-
-        if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(logits, labels)
-            return loss, logits
-        else:
-            return logits
+        # logits = self.score_fc(fusion).view(bsz, self.num_labels)
+        #
+        # if labels is not None:
+        #     loss_fct = CrossEntropyLoss()
+        #     loss = loss_fct(logits, labels)
+        #     return loss, logits
+        # else:
+        #     return logits

@@ -38,8 +38,10 @@ from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import matthews_corrcoef, f1_score
 
 from transformers import (BertConfig, BertForMultipleChoice, BertTokenizer,
-                            ElectraConfig, ElectraTokenizer, RobertaConfig, RobertaTokenizer, RobertaForMultipleChoice)
-from modeling import (ElectraForMultipleChoicePlus, Baseline, BertBaseline, RobertaBaseline, BertForMultipleChoicePlus, RobertaForMultipleChoicePlus)
+                          ElectraConfig, ElectraTokenizer, RobertaConfig,
+                          RobertaTokenizer, RobertaForMultipleChoice)
+from modeling import (ElectraForMultipleChoicePlus, BertForMultipleChoicePlus,
+                      RobertaForMultipleChoicePlus)
 from transformers import (AdamW, WEIGHTS_NAME, CONFIG_NAME)
 import re
 import os
@@ -52,6 +54,7 @@ MODEL_CLASSES = {
     'electra': (ElectraConfig, ElectraForMultipleChoicePlus, ElectraTokenizer)
 }
 
+
 def select_field(features, field):
     return [
         [
@@ -60,6 +63,7 @@ def select_field(features, field):
         ]
         for feature in features
     ]
+
 
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
@@ -93,11 +97,15 @@ class InputFeatures(object):
                 'input_mask': input_mask,
                 'segment_ids': segment_ids,
                 'sep_pos': sep_pos,
-                'turn_ids': turn_ids
+                'turn_ids': turn_ids,
+                "doc_final_pos": doc_final_pos
             }
-            for input_ids, input_mask, segment_ids, sep_pos, turn_ids in choices_features
+            for
+            input_ids, input_mask, segment_ids, sep_pos, turn_ids, doc_final_pos
+            in choices_features
         ]
         self.label = label
+
 
 class DataProcessor(object):
     """Base class for data converters for sequence classification data sets."""
@@ -113,6 +121,7 @@ class DataProcessor(object):
     def get_labels(self):
         """Gets the list of labels for this data set."""
         raise NotImplementedError()
+
 
 class DoubanProcessor(DataProcessor):
     def get_train_examples(self, data_dir):
@@ -144,7 +153,8 @@ class DoubanProcessor(DataProcessor):
             text_b = [line["m"].strip().split("[SEP]")]
             label = line["y"]
             examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+                InputExample(guid=guid, text_a=text_a, text_b=text_b,
+                             label=label))
         return examples
 
     def _read_data(self, input_file):
@@ -155,8 +165,10 @@ class DoubanProcessor(DataProcessor):
             message_list = []
             response_list = []
             label_any_1 = 0
-            for ids,line in enumerate(f):
-                line = re.compile('[\\x00-\\x08\\x0b-\\x0c\\x0e-\\x1f\\x7f]').sub(' ', line).strip()
+            for ids, line in enumerate(f):
+                line = re.compile(
+                    '[\\x00-\\x08\\x0b-\\x0c\\x0e-\\x1f\\x7f]').sub(' ',
+                                                                    line).strip()
                 line = line.strip().replace("_", "")
                 parts = line.strip().split("\t")
                 lable = parts[0]
@@ -167,7 +179,7 @@ class DoubanProcessor(DataProcessor):
                         message += part
                         message += " [SEP] "
                 response = parts[-1]
-                
+
                 if lable == '1':
                     label_any_1 = 1
                 label_list.append(lable)
@@ -175,7 +187,9 @@ class DoubanProcessor(DataProcessor):
                 response_list.append(response)
                 if ids % 10 == 9:
                     if label_any_1 == 1:
-                        for lable,message,response in zip(label_list,message_list,response_list):
+                        for lable, message, response in zip(label_list,
+                                                            message_list,
+                                                            response_list):
                             data = {"y": lable, "m": message, "r": response}
                             lines.append(data)
                     label_any_1 = 0
@@ -183,6 +197,7 @@ class DoubanProcessor(DataProcessor):
                     message_list = []
                     response_list = []
             return lines
+
 
 class UbuntuProcessor(DataProcessor):
     """Processor for the MRPC data set (GLUE version)."""
@@ -212,8 +227,10 @@ class UbuntuProcessor(DataProcessor):
 
         with open(input_file, "r", encoding="utf-8") as f:
             lines = []
-            for i,line in enumerate(f):
-                line = re.compile('[\\x00-\\x08\\x0b-\\x0c\\x0e-\\x1f\\x7f]').sub(' ', line).strip()
+            for i, line in enumerate(f):
+                line = re.compile(
+                    '[\\x00-\\x08\\x0b-\\x0c\\x0e-\\x1f\\x7f]').sub(' ',
+                                                                    line).strip()
                 line = line.strip().replace("_", "")
                 parts = line.strip().split("\t")
                 lable = parts[0]
@@ -234,15 +251,17 @@ class UbuntuProcessor(DataProcessor):
     def _create_examples(self, lines, set_type):
         """Creates examples for the training and dev sets."""
         examples = []
-        
+
         for (i, line) in enumerate(lines):
             guid = "%s-%s" % (set_type, i)
             text_a = [line["r"]]
             text_b = [line["m"].strip().split("[SEP]")]
             label = line["y"]
             examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+                InputExample(guid=guid, text_a=text_a, text_b=text_b,
+                             label=label))
         return examples
+
 
 class MuTualProcessor(DataProcessor):
     """Processor for the MuTual data set."""
@@ -282,7 +301,6 @@ class MuTualProcessor(DataProcessor):
                 lines.append(data_raw)
         return lines
 
-
     def _create_examples(self, lines, set_type):
         """Creates examples for the training and dev sets."""
         examples = []
@@ -300,18 +318,21 @@ class MuTualProcessor(DataProcessor):
                 InputExample(
                     guid=id,
                     text_a=[options[0], options[1], options[2], options[3]],
-                    text_b=[article, article, article, article], # this is not efficient but convenient
+                    text_b=[article, article, article, article],
+                    # this is not efficient but convenient
                     label=truth))
         return examples
 
-def convert_examples_to_features(examples, label_list, max_seq_length, max_utterance_num,
+
+def convert_examples_to_features(examples, label_list, max_seq_length,
+                                 max_utterance_num,
                                  tokenizer, output_mode):
     """Loads a data file into a list of `InputBatch`s."""
 
-    label_map = {label : i for i, label in enumerate(label_list)}
+    label_map = {label: i for i, label in enumerate(label_list)}
 
     features = []
-    
+
     for (ex_index, example) in enumerate(examples):
         if ex_index % 10000 == 0:
             logger.info("Writing example %d of %d" % (ex_index, len(examples)))
@@ -319,7 +340,8 @@ def convert_examples_to_features(examples, label_list, max_seq_length, max_utter
         choices_features = []
         all_tokens = []
 
-        for ending_idx, (text_a, text_b) in enumerate(zip(example.text_a, example.text_b)):
+        for ending_idx, (text_a, text_b) in enumerate(
+                zip(example.text_a, example.text_b)):
             tokens_a = tokenizer.tokenize(text_a)
 
             tokens_b = []
@@ -327,7 +349,8 @@ def convert_examples_to_features(examples, label_list, max_seq_length, max_utter
             for idx, text in enumerate(text_b):
                 if len(text.strip()) > 0:
                     tokens_b.extend(tokenizer.tokenize(text) + ["[SEP]"])
-            
+
+            # Truncate one token from the longer one, dialogue or option
             _truncate_seq_pair(tokens_a, tokens_b, max_seq_length - 2)
 
             tokens = ["[CLS]"]
@@ -335,7 +358,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length, max_utter
 
             context_len = []
             sep_pos = []
-            
+
             tokens_b_raw = " ".join(tokens_b)
             tokens_b = []
             current_pos = 0
@@ -346,22 +369,30 @@ def convert_examples_to_features(examples, label_list, max_seq_length, max_utter
                 current_pos += context_len[-1]
                 turn_ids += [len(sep_pos)] * context_len[-1]
                 sep_pos.append(current_pos)
-                
-            tokens += tokens_b
 
+            # segment id, 0 for article, 1 for option
+            # tokens = [CLS] + (token_b(dialogue) + [SEP]) * n + token_a(option) + [SEP]
+            # sep_pos = list of indices of the SEP
+            # turn_ids = list of ints, each number indicates a turn
+            tokens += tokens_b
+            index_doc_sep = len(tokens)
             segment_ids = [0] * (len(tokens))
 
             tokens_a += ["[SEP]"]
+
             tokens += tokens_a
+
             segment_ids += [1] * (len(tokens_a))
-            
-            turn_ids += [len(sep_pos)] * len(tokens_a) 
+
+            turn_ids += [len(sep_pos)] * len(tokens_a)
             sep_pos.append(len(tokens) - 1)
 
             input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
             input_mask = [1] * len(input_ids)
 
+            # Extend all ids to be max_seq_len, 0 stands for padding in mask and
+            # ids
             padding = [0] * (max_seq_length - len(input_ids))
             input_ids += padding
             input_mask += padding
@@ -375,15 +406,15 @@ def convert_examples_to_features(examples, label_list, max_seq_length, max_utter
             assert len(input_ids) == max_seq_length
             assert len(input_mask) == max_seq_length
             assert len(segment_ids) == max_seq_length
-            assert len(context_len) == max_utterance_num 
-            assert len(turn_ids) == max_seq_length 
+            assert len(context_len) == max_utterance_num
+            assert len(turn_ids) == max_seq_length
 
-            choices_features.append((input_ids, input_mask, segment_ids, sep_pos, turn_ids))
+            choices_features.append((
+                                    input_ids, input_mask, segment_ids, sep_pos,
+                                    turn_ids, index_doc_sep))
             all_tokens.append(tokens)
 
-
         label_id = label_map[example.label]
-        
 
         # if ex_index < 10:
         #     logger.info("*** Example ***")
@@ -400,14 +431,16 @@ def convert_examples_to_features(examples, label_list, max_seq_length, max_utter
 
         features.append(
             InputFeatures(
-                example_id = example.guid, 
-                choices_features = choices_features,
-                label = label_id
-                )
+                example_id=example.guid,
+                choices_features=choices_features,
+                label=label_id
+            )
         )
-
+    # id: guid
+    # choice_features: (input_ids, input_mask, segment_ids, sep_pos, turn_ids)
+    # # label: label
     return features
-            
+
 
 def _truncate_seq_pair(tokens_a, tokens_b, max_length):
     """Truncates a sequence pair in place to the maximum length."""
@@ -425,6 +458,7 @@ def _truncate_seq_pair(tokens_a, tokens_b, max_length):
         else:
             tokens_b.pop(0)
 
+
 def get_p_at_n_in_m(pred, n, m, ind):
     pos_score = pred[ind]
     curr = pred[ind:ind + m]
@@ -433,6 +467,7 @@ def get_p_at_n_in_m(pred, n, m, ind):
     if curr[n - 1] <= pos_score:
         return 1
     return 0
+
 
 def mean_average_precision(sort_data):
     # to do
@@ -461,8 +496,9 @@ def precision_at_position_1(sort_data):
 def recall_at_position_k_in_10(sort_data, k):
     sort_lable = [s_d[1] for s_d in sort_data]
     select_lable = sort_lable[:k]
-    
+
     return 1.0 * select_lable.count(1) / sort_lable.count(1)
+
 
 def evaluation_one_session(data):
     sort_data = sorted(data, key=lambda x: x[0], reverse=True)
@@ -474,6 +510,7 @@ def evaluation_one_session(data):
     r_5 = recall_at_position_k_in_10(sort_data, 5)
     return m_a_p, m_r_r, p_1, r_1, r_2, r_5
 
+
 def evaluate_douban(pred, label):
     sum_m_a_p = 0
     sum_m_r_r = 0
@@ -484,7 +521,7 @@ def evaluate_douban(pred, label):
 
     total_num = 0
     data = []
-    #print(label)
+    # print(label)
     for i in range(0, len(label)):
         if i % 10 == 0:
             data = []
@@ -502,8 +539,11 @@ def evaluate_douban(pred, label):
     # print('MAP: %s' %(1.0*sum_m_a_p/total_num))
     # print('MRR: %s' %(1.0*sum_m_r_r/total_num))
     # print('P@1: %s' %(1.0*sum_p_1/total_num))
-    return (1.0 * sum_m_a_p / total_num, 1.0 * sum_m_r_r / total_num, 1.0 * sum_p_1 / total_num,
-            1.0 * sum_r_1 / total_num, 1.0 * sum_r_2 / total_num, 1.0 * sum_r_5 / total_num)
+    return (1.0 * sum_m_a_p / total_num, 1.0 * sum_m_r_r / total_num,
+            1.0 * sum_p_1 / total_num,
+            1.0 * sum_r_1 / total_num, 1.0 * sum_r_2 / total_num,
+            1.0 * sum_r_5 / total_num)
+
 
 def evaluate(pred, label):
     # assert len(data) % 10 == 0
@@ -524,12 +564,15 @@ def evaluate(pred, label):
         p_at_2_in_10 += get_p_at_n_in_m(pred, 2, 10, ind)
         p_at_5_in_10 += get_p_at_n_in_m(pred, 5, 10, ind)
 
-    return (p_at_1_in_2 / length, p_at_1_in_10 / length, p_at_2_in_10 / length, p_at_5_in_10 / length)
+    return (p_at_1_in_2 / length, p_at_1_in_10 / length, p_at_2_in_10 / length,
+            p_at_5_in_10 / length)
+
 
 def simple_accuracy(preds, labels):
     return (preds == labels).mean()
 
-def ComputeR10(scores,labels,count = 10):
+
+def ComputeR10(scores, labels, count=10):
     total = 0
     correct1 = 0
     correct5 = 0
@@ -537,8 +580,8 @@ def ComputeR10(scores,labels,count = 10):
     correct10 = 0
     for i in range(len(labels)):
         if labels[i] == 1:
-            total = total+1
-            sublist = scores[i:i+count]
+            total = total + 1
+            sublist = scores[i:i + count]
             if np.argmax(sublist) < 1:
                 correct1 = correct1 + 1
             if np.argmax(sublist) < 2:
@@ -548,34 +591,40 @@ def ComputeR10(scores,labels,count = 10):
             if np.argmax(sublist) < 10:
                 correct10 = correct10 + 1
     print(correct1, correct5, correct10, total)
-    return (float(correct1)/ total, float(correct2)/ total, float(correct5)/ total, float(correct10)/ total)
+    return (
+    float(correct1) / total, float(correct2) / total, float(correct5) / total,
+    float(correct10) / total)
 
-def ComputeR2_1(scores,labels,count = 2):
+
+def ComputeR2_1(scores, labels, count=2):
     total = 0
     correct = 0
     for i in range(len(labels)):
         if labels[i] == 1:
-            total = total+1
-            sublist = scores[i:i+count]
+            total = total + 1
+            sublist = scores[i:i + count]
             if max(sublist) == scores[i]:
                 correct = correct + 1
-    return (float(correct)/ total)
+    return (float(correct) / total)
+
 
 def Compute_R4_2(preds, labels):
     p2 = 0
     for i in range(len(preds)):
-        j = sorted(list(preds[i]), reverse = True)
+        j = sorted(list(preds[i]), reverse=True)
         if j.index(preds[i][labels[i]]) <= 1:
             p2 += 1
     return p2 / len(preds)
 
+
 def Compute_MRR(preds, labels):
     mrr = 0
     for i in range(len(preds)):
-        j = sorted(list(preds[i]), reverse = True)
+        j = sorted(list(preds[i]), reverse=True)
         mrr += 1 / (j.index(preds[i][labels[i]]) + 1)
-    
+
     return mrr / len(preds)
+
 
 def compute_metrics(task_name, preds, labels):
     assert len(preds) == len(labels)
@@ -587,11 +636,16 @@ def compute_metrics(task_name, preds, labels):
     preds_logits = preds[:, 1]
 
     if task_name in ["ubuntu", "ecd"]:
-        return {"acc": simple_accuracy(preds_class, labels), "recall@10":ComputeR10(preds_logits, labels), "recall@2":ComputeR2_1(preds_logits, labels), "DAM":evaluate(preds_logits, labels)}
+        return {"acc": simple_accuracy(preds_class, labels),
+                "recall@10": ComputeR10(preds_logits, labels),
+                "recall@2": ComputeR2_1(preds_logits, labels),
+                "DAM": evaluate(preds_logits, labels)}
     elif task_name == 'douban':
-        return {"DAM":evaluate_douban(preds_logits, labels)}
+        return {"DAM": evaluate_douban(preds_logits, labels)}
     elif task_name in ['mutual']:
-        return {"R4_1": simple_accuracy(preds_class, labels), "R4_2": Compute_R4_2(preds, labels), "MRR:": Compute_MRR(preds, labels)}
+        return {"R4_1": simple_accuracy(preds_class, labels),
+                "R4_2": Compute_R4_2(preds, labels),
+                "MRR:": Compute_MRR(preds, labels)}
     else:
         raise KeyError(task_name)
 
@@ -604,9 +658,10 @@ def main():
                         default='../../../MuTual/data/mutual',
                         type=str,
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
-    parser.add_argument("--model_name_or_path", default="google/electra-large-discriminator", type=str)
-    parser.add_argument("--model_type", default="electra", type = str,
-                        help = "Pre-trained Model selected in the list: bert, roberta, electra")
+    parser.add_argument("--model_name_or_path",
+                        default="google/electra-large-discriminator", type=str)
+    parser.add_argument("--model_type", default="electra", type=str,
+                        help="Pre-trained Model selected in the list: bert, roberta, electra")
     parser.add_argument("--task_name",
                         default="mutual",
                         type=str,
@@ -624,10 +679,10 @@ def main():
                         type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
     ## Other parameters
-    parser.add_argument("--max_grad_norm", 
-                        default = 1.0, 
-                        type = float,
-                        help = "The maximum grad norm for clipping")
+    parser.add_argument("--max_grad_norm",
+                        default=1.0,
+                        type=float,
+                        help="The maximum grad norm for clipping")
     parser.add_argument("--cache_dir",
                         default='../../cached_models',
                         type=str,
@@ -704,15 +759,18 @@ def main():
                         help="Loss scaling to improve fp16 numeric stability. Only used when fp16 set to True.\n"
                              "0 (default value): dynamic loss scaling.\n"
                              "Positive power of 2: static loss scaling value.\n")
-    parser.add_argument('--server_ip', type=str, default='', help="Can be used for distant debugging.")
-    parser.add_argument('--server_port', type=str, default='', help="Can be used for distant debugging.")
+    parser.add_argument('--server_ip', type=str, default='',
+                        help="Can be used for distant debugging.")
+    parser.add_argument('--server_port', type=str, default='',
+                        help="Can be used for distant debugging.")
     args = parser.parse_args()
 
     if args.server_ip and args.server_port:
         # Distant debugging - see https://code.visualstudio.com/docs/python/debugging#_attach-to-a-local-script
         import ptvsd
         print("Waiting for debugger attach")
-        ptvsd.enable_attach(address=(args.server_ip, args.server_port), redirect_output=True)
+        ptvsd.enable_attach(address=(args.server_ip, args.server_port),
+                            redirect_output=True)
         ptvsd.wait_for_attach()
 
     processors = {
@@ -730,7 +788,8 @@ def main():
     }
 
     if args.local_rank == -1 or args.no_cuda:
-        device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
+        device = torch.device(
+            "cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
         n_gpu = torch.cuda.device_count()
     else:
         torch.cuda.set_device(args.local_rank)
@@ -739,16 +798,19 @@ def main():
         # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
         torch.distributed.init_process_group(backend='nccl')
 
-    logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                        datefmt = '%m/%d/%Y %H:%M:%S',
-                        level = logging.INFO if args.local_rank in [-1, 0] else logging.WARN)
+    logging.basicConfig(
+        format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+        datefmt='%m/%d/%Y %H:%M:%S',
+        level=logging.INFO if args.local_rank in [-1, 0] else logging.WARN)
 
-    logger.info("device: {} n_gpu: {}, distributed training: {}, 16-bits training: {}".format(
-        device, n_gpu, bool(args.local_rank != -1), args.fp16))
+    logger.info(
+        "device: {} n_gpu: {}, distributed training: {}, 16-bits training: {}".format(
+            device, n_gpu, bool(args.local_rank != -1), args.fp16))
 
     if args.gradient_accumulation_steps < 1:
-        raise ValueError("Invalid gradient_accumulation_steps parameter: {}, should be >= 1".format(
-                            args.gradient_accumulation_steps))
+        raise ValueError(
+            "Invalid gradient_accumulation_steps parameter: {}, should be >= 1".format(
+                args.gradient_accumulation_steps))
 
     args.train_batch_size = args.train_batch_size // args.gradient_accumulation_steps
 
@@ -759,10 +821,14 @@ def main():
         torch.cuda.manual_seed_all(args.seed)
 
     if not args.do_train and not args.do_eval:
-        raise ValueError("At least one of `do_train` or `do_eval` must be True.")
-    
-    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train:
-        raise ValueError("Output directory ({}) already exists and is not empty.".format(args.output_dir))
+        raise ValueError(
+            "At least one of `do_train` or `do_eval` must be True.")
+
+    if os.path.exists(args.output_dir) and os.listdir(
+            args.output_dir) and args.do_train:
+        raise ValueError(
+            "Output directory ({}) already exists and is not empty.".format(
+                args.output_dir))
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
@@ -779,23 +845,16 @@ def main():
 
     config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
 
-    if args.baseline:
-        if args.model_type == 'electra':
-            model_class = Baseline
-        elif args.model_type == 'bert':
-            model_class = BertBaseline
-        elif args.model_type == 'roberta':
-            model_class = RobertaBaseline
-
     config = config_class.from_pretrained(args.model_name_or_path,
                                           num_labels=num_labels,
-                                          finetuning_task=args.task_name, 
+                                          finetuning_task=args.task_name,
                                           cache_dir=args.cache_dir if args.cache_dir else None)
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path,
                                                 do_lower_case=args.do_lower_case,
                                                 cache_dir=args.cache_dir if args.cache_dir else None)
     model = model_class.from_pretrained(args.model_name_or_path,
-                                        from_tf=bool('.ckpt' in args.model_name_or_path),
+                                        from_tf=bool(
+                                            '.ckpt' in args.model_name_or_path),
                                         config=config,
                                         cache_dir=args.cache_dir if args.cache_dir else None)
 
@@ -832,8 +891,11 @@ def main():
         param_optimizer = list(model.named_parameters())
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
         optimizer_grouped_parameters = [
-            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
-            {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+            {'params': [p for n, p in param_optimizer if
+                        not any(nd in n for nd in no_decay)],
+             'weight_decay': 0.01},
+            {'params': [p for n, p in param_optimizer if
+                        any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
         if args.fp16:
             try:
@@ -850,16 +912,19 @@ def main():
             if args.loss_scale == 0:
                 optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
             else:
-                optimizer = FP16_Optimizer(optimizer, static_loss_scale=args.loss_scale)
+                optimizer = FP16_Optimizer(optimizer,
+                                           static_loss_scale=args.loss_scale)
         else:
-            optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
+            optimizer = AdamW(optimizer_grouped_parameters,
+                              lr=args.learning_rate, eps=args.adam_epsilon)
 
     global_step = 0
     nb_tr_steps = 0
     tr_loss = 0
     if args.do_train:
         cached_train_features_file = args.data_dir + '_{0}_{1}_{2}_{3}_{4}_{5}'.format(
-            list(filter(None, args.model_name_or_path.split('/'))).pop(), "train",str(args.task_name), str(args.max_seq_length),
+            list(filter(None, args.model_name_or_path.split('/'))).pop(),
+            "train", str(args.task_name), str(args.max_seq_length),
             str(args.max_utterance_num), str(args.cache_flag))
         train_features = None
         try:
@@ -867,9 +932,11 @@ def main():
                 train_features = pickle.load(reader)
         except:
             train_features = convert_examples_to_features(
-                train_examples, label_list, args.max_seq_length, args.max_utterance_num, tokenizer, output_mode)
+                train_examples, label_list, args.max_seq_length,
+                args.max_utterance_num, tokenizer, output_mode)
             if args.local_rank == -1 or torch.distributed.get_rank() == 0:
-                logger.info("  Saving train features into cached file %s", cached_train_features_file)
+                logger.info("  Saving train features into cached file %s",
+                            cached_train_features_file)
                 with open(cached_train_features_file, "wb") as writer:
                     pickle.dump(train_features, writer)
 
@@ -877,31 +944,43 @@ def main():
         logger.info("  Num examples = %d", len(train_examples))
         logger.info("  Batch size = %d", args.train_batch_size)
         logger.info("  Num steps = %d", num_train_optimization_steps)
-        
+
         # (batch_size, 1, seq_len)
-        all_input_ids = torch.tensor(select_field(train_features, 'input_ids'), dtype=torch.long)
-        all_input_mask = torch.tensor(select_field(train_features, 'input_mask'), dtype=torch.long)
-        all_segment_ids = torch.tensor(select_field(train_features, 'segment_ids'), dtype=torch.long)
-        #all_response_len = torch.tensor(select_field(train_features, 'response_len'), dtype=torch.long)
-        all_sep_pos = torch.tensor(select_field(train_features, 'sep_pos'), dtype=torch.long)
-        all_turn_ids = torch.tensor(select_field(train_features, 'turn_ids'), dtype = torch.long)
+        all_input_ids = torch.tensor(select_field(train_features, 'input_ids'),
+                                     dtype=torch.long)
+        all_input_mask = torch.tensor(
+            select_field(train_features, 'input_mask'), dtype=torch.long)
+        all_segment_ids = torch.tensor(
+            select_field(train_features, 'segment_ids'), dtype=torch.long)
+        all_doc_final_pos = torch.tensor(
+            select_field(train_features, 'doc_final_pos'), dtype=torch.long)
+        all_sep_pos = torch.tensor(select_field(train_features, 'sep_pos'),
+                                   dtype=torch.long)
+        all_turn_ids = torch.tensor(select_field(train_features, 'turn_ids'),
+                                    dtype=torch.long)
 
         if output_mode == "classification":
-            all_label_ids = torch.tensor([f.label for f in train_features], dtype=torch.long)
+            all_label_ids = torch.tensor([f.label for f in train_features],
+                                         dtype=torch.long)
         elif output_mode == "regression":
-            all_label_ids = torch.tensor([f.label for f in train_features], dtype=torch.float)
+            all_label_ids = torch.tensor([f.label for f in train_features],
+                                         dtype=torch.float)
 
-        train_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_sep_pos, all_turn_ids, all_label_ids)
+        train_data = TensorDataset(all_input_ids, all_input_mask,
+                                   all_segment_ids, all_sep_pos, all_turn_ids,
+                                   all_label_ids, all_doc_final_pos)
 
         if args.local_rank == -1:
             train_sampler = RandomSampler(train_data)
         else:
             train_sampler = DistributedSampler(train_data)
-        train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=args.train_batch_size)
+        train_dataloader = DataLoader(train_data, sampler=train_sampler,
+                                      batch_size=args.train_batch_size)
 
         eval_examples = processor.get_dev_examples(args.data_dir)
         cached_train_features_file = args.data_dir + '_{0}_{1}_{2}_{3}_{4}_{5}'.format(
-            list(filter(None, args.model_name_or_path.split('/'))).pop(), "valid",str(args.task_name), str(args.max_seq_length),
+            list(filter(None, args.model_name_or_path.split('/'))).pop(),
+            "valid", str(args.task_name), str(args.max_seq_length),
             str(args.max_utterance_num), str(args.cache_flag))
         eval_features = None
         try:
@@ -909,47 +988,65 @@ def main():
                 eval_features = pickle.load(reader)
         except:
             eval_features = convert_examples_to_features(
-                eval_examples, label_list, args.max_seq_length, args.max_utterance_num, tokenizer, output_mode)
+                eval_examples, label_list, args.max_seq_length,
+                args.max_utterance_num, tokenizer, output_mode)
             if args.local_rank == -1 or torch.distributed.get_rank() == 0:
-                logger.info("  Saving eval features into cached file %s", cached_train_features_file)
+                logger.info("  Saving eval features into cached file %s",
+                            cached_train_features_file)
                 with open(cached_train_features_file, "wb") as writer:
                     pickle.dump(eval_features, writer)
 
         logger.info("***** Running evaluation *****")
         logger.info("  Num examples = %d", len(eval_examples))
         logger.info("  Batch size = %d", args.eval_batch_size)
-        all_input_ids = torch.tensor(select_field(eval_features, 'input_ids'), dtype=torch.long)
-        all_input_mask = torch.tensor(select_field(eval_features, 'input_mask'), dtype=torch.long)
-        all_segment_ids = torch.tensor(select_field(eval_features, 'segment_ids'), dtype=torch.long)
-        all_sep_pos = torch.tensor(select_field(eval_features, 'sep_pos'), dtype=torch.long)
-        all_turn_ids = torch.tensor(select_field(eval_features, 'turn_ids'), dtype = torch.long)
+        all_input_ids = torch.tensor(select_field(eval_features, 'input_ids'),
+                                     dtype=torch.long)
+        all_input_mask = torch.tensor(select_field(eval_features, 'input_mask'),
+                                      dtype=torch.long)
+        all_segment_ids = torch.tensor(
+            select_field(eval_features, 'segment_ids'), dtype=torch.long)
+        all_doc_final_pos = torch.tensor(
+            select_field(eval_features, 'doc_final_pos'), dtype=torch.long)
+        all_sep_pos = torch.tensor(select_field(eval_features, 'sep_pos'),
+                                   dtype=torch.long)
+        all_turn_ids = torch.tensor(select_field(eval_features, 'turn_ids'),
+                                    dtype=torch.long)
 
         if output_mode == "classification":
-            all_label_ids = torch.tensor([f.label for f in eval_features], dtype=torch.long)
+            all_label_ids = torch.tensor([f.label for f in eval_features],
+                                         dtype=torch.long)
         elif output_mode == "regression":
-            all_label_ids = torch.tensor([f.label for f in eval_features], dtype=torch.float)
+            all_label_ids = torch.tensor([f.label for f in eval_features],
+                                         dtype=torch.float)
 
-        eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_sep_pos, all_turn_ids, all_label_ids)
+        eval_data = TensorDataset(all_input_ids, all_input_mask,
+                                  all_segment_ids, all_sep_pos, all_turn_ids,
+                                  all_label_ids, all_doc_final_pos)
         # Run prediction for full data
 
         eval_sampler = SequentialSampler(eval_data)
-        eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
+        eval_dataloader = DataLoader(eval_data, sampler=eval_sampler,
+                                     batch_size=args.eval_batch_size)
 
         for epoch in trange(int(args.num_train_epochs), desc="Epoch"):
             model.train()
             tr_loss = 0
-            #nb_tr_examples = 0
+            # nb_tr_examples = 0
             nb_tr_steps = 0
-            for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
+            for step, batch in enumerate(
+                    tqdm(train_dataloader, desc="Iteration")):
                 batch = tuple(t.to(device) for t in batch)
                 inputs = {'input_ids': batch[0],
                           'attention_mask': batch[1],
-                          'token_type_ids': batch[2] if args.model_type in ['bert', 'xlnet', 'albert'] else None, # XLM don't use segment_ids
+                          'token_type_ids': batch[2] if args.model_type in [
+                              'bert', 'xlnet', 'albert'] else None,
+                          # XLM don't use segment_ids
                           'sep_pos': batch[3],
                           'turn_ids': batch[4],
-                          'labels': batch[5]}
-                
-                #input_ids, input_mask, segment_ids, response_len, sep_pos, label_ids = batch
+                          'labels': batch[5],
+                          'doc_final_pos': batch[6]}
+
+                # input_ids, input_mask, segment_ids, response_len, sep_pos, label_ids = batch
 
                 output = model(**inputs)
                 loss = output[0]
@@ -963,7 +1060,8 @@ def main():
                     optimizer.backward(loss)
                 else:
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(),
+                                                   args.max_grad_norm)
 
                 tr_loss += loss.detach().item()
                 nb_tr_steps += 1
@@ -979,14 +1077,16 @@ def main():
 
                     optimizer.step()
                     optimizer.zero_grad()
-                    
+
                     global_step += 1
 
             # Save a trained model, configuration and tokenizer
-            model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
+            model_to_save = model.module if hasattr(model,
+                                                    'module') else model  # Only save the model it-self
 
             # If we save using the predefined names, we can load using `from_pretrained`
-            output_model_file = os.path.join(args.output_dir, str(epoch) + "_" + WEIGHTS_NAME)
+            output_model_file = os.path.join(args.output_dir,
+                                             str(epoch) + "_" + WEIGHTS_NAME)
             output_config_file = os.path.join(args.output_dir, CONFIG_NAME)
 
             torch.save(model_to_save.state_dict(), output_model_file)
@@ -1003,27 +1103,33 @@ def main():
 
                 with torch.no_grad():
                     inputs = {'input_ids': batch[0],
-                          'attention_mask': batch[1],
-                          'token_type_ids': batch[2] if args.model_type in ['bert', 'xlnet', 'albert'] else None, # XLM don't use segment_ids
-                          'sep_pos': batch[3],
-                          'turn_ids': batch[4],
-                          'labels': batch[5]}
-                    #outputs = eval_model(**inputs)
+                              'attention_mask': batch[1],
+                              'token_type_ids': batch[2] if args.model_type in [
+                                  'bert', 'xlnet', 'albert'] else None,
+                              # XLM don't use segment_ids
+                              'sep_pos': batch[3],
+                              'turn_ids': batch[4],
+                              'labels': batch[5],
+                              'doc_final_pos': batch[6]
+                              }
+                    # outputs = eval_model(**inputs)
                     outputs = model(**inputs)
                     tmp_eval_loss, logits = outputs[:2]
 
                     eval_loss += tmp_eval_loss.detach().mean().item()
-                
+
                 nb_eval_steps += 1
                 if preds is None:
                     preds = logits.detach().cpu().numpy()
                     out_label_ids = inputs['labels'].detach().cpu().numpy()
                 else:
-                    preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-                    out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
+                    preds = np.append(preds, logits.detach().cpu().numpy(),
+                                      axis=0)
+                    out_label_ids = np.append(out_label_ids, inputs[
+                        'labels'].detach().cpu().numpy(), axis=0)
 
             eval_loss = eval_loss / nb_eval_steps
-            
+
             result = compute_metrics(task_name, preds, out_label_ids)
             loss = tr_loss / nb_tr_steps if args.do_train else None
 
@@ -1037,6 +1143,7 @@ def main():
                 for key in sorted(result.keys()):
                     logger.info("  %s = %s", key, str(result[key]))
                     writer.write("%s = %s\n" % (key, str(result[key])))
+
 
 if __name__ == "__main__":
     main()
