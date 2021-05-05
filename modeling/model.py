@@ -149,7 +149,8 @@ class OCN(nn.Module):
 
         opt_mask = opt_mask.view(bsz * num_label, opt_total_len)
         opt_enc = opt_enc.view(bsz * num_label, opt_total_len, self.hidden_size)
-        option = torch.add(opt_enc, torch.squeeze(opt_correlation, dim=0))
+        _, _, dim2, dim3 = opt_correlation.shape
+        option = torch.add(opt_enc, opt_correlation.view(-1, dim2, dim3))
         # option = self.aggregation_layer(concat_encodings)
 
         (attn, _), (coattn, _) = self.attention(option, doc_enc, doc_enc, opt_mask, doc_mask)
