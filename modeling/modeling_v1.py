@@ -156,7 +156,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
         self.classifier2 = nn.Linear(config.hidden_size, 2)
-        self.merger = torch.nn.Linear(2*config.hidden_size, config.hidden_size)
+        self.merger = torch.nn.Linear(3*config.hidden_size, config.hidden_size)
         self.merger_activation = nn.Tanh()
 
         self.init_weights()
@@ -284,10 +284,10 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         context_final_states = self.gru1(context_utterance_level) 
         sa_final_states = self.gru2(sa_utterance_level) # (batch_size * num_choice, 2 * hidden_size)
         
-        final_state = torch.cat((context_final_states, sa_final_states), 1)
+        final_state = torch.cat((context_final_states, sa_final_states, correlation_output), 1)
 
         pooled_output = self.pooler_activation(self.pooler(final_state))
-        pooled_output = self.merger_activation(self.merger(torch.cat([correlation_output, pooled_output], dim=-1)))
+        # pooled_output = self.merger_activation(self.merger(torch.cat([correlation_output, pooled_output], dim=-1)))
         pooled_output = self.dropout(pooled_output)
 
         if num_labels > 2:

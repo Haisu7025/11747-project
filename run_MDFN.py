@@ -1063,6 +1063,10 @@ def main():
 
                 output = model(**inputs)
                 loss = output[0]
+                if torch.isnan(loss):
+                    print("Epoch {}, iteration {}: NaN happens".format(epoch, step))
+                    print(output)
+                    raise ValueError()
 
                 if n_gpu > 1:
                     loss = loss.mean()  # mean() to average on multi-gpu.
