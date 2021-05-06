@@ -1046,7 +1046,8 @@ def main():
             tr_loss = 0
             # nb_tr_examples = 0
             nb_tr_steps = 0
-            progress_bar = tqdm(train_dataloader, desc="Iteration")
+            progress_bar = tqdm(train_dataloader, desc="Iteration", position=0,
+                                leave=True)
             for step, batch in enumerate(
                     progress_bar):
                 batch = tuple(t.to(device) for t in batch)
@@ -1066,8 +1067,8 @@ def main():
                 loss = output[0]
                 if torch.isnan(loss).any() or torch.isnan(output[1]).any():
                     print("Epoch {}, iteration {}: NaN happens".format(epoch, step))
-                    print(output)
-                    raise ValueError()
+                    # print(output)
+                    # raise ValueError()
 
                 if n_gpu > 1:
                     loss = loss.mean()  # mean() to average on multi-gpu.
@@ -1118,7 +1119,7 @@ def main():
             eval_loss = 0
             nb_eval_steps = 0
             preds = None
-            progress_bar_eval = tqdm(eval_dataloader, desc="Evaluating")
+            progress_bar_eval = tqdm(eval_dataloader, desc="Evaluating", leave=True, postion=0)
             for j, batch in enumerate(progress_bar_eval):
                 batch = tuple(t.to(device) for t in batch)
 
@@ -1138,8 +1139,8 @@ def main():
                     tmp_eval_loss, logits = outputs[:2]
                     if torch.isnan(tmp_eval_loss).any() or torch.isnan(logits).any():
                         print("Epoch {} evaluation: NaN happens".format(epoch))
-                        print(logits)
-                        raise ValueError()
+                        # print(logits)
+                        # raise ValueError()
                     cur_loss = tmp_eval_loss.detach().mean().item()
                     progress_bar_eval.set_description("Evaulation loss: {}, Iteration {}".format(cur_loss, j))
                     eval_loss += cur_loss
