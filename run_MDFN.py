@@ -1151,36 +1151,36 @@ def main():
                     out_label_ids = np.append(out_label_ids, inputs[
                         'labels'].detach().cpu().numpy(), axis=0)
 
-                eval_loss = eval_loss / nb_eval_steps
+            eval_loss = eval_loss / nb_eval_steps
 
-                result = compute_metrics(task_name, preds, out_label_ids)
-                loss = tr_loss / nb_tr_steps if args.do_train else None
+            result = compute_metrics(task_name, preds, out_label_ids)
+            loss = tr_loss / nb_tr_steps if args.do_train else None
 
-                result['eval_loss'] = eval_loss
-                result['global_step'] = global_step
-                result['loss'] = loss
+            result['eval_loss'] = eval_loss
+            result['global_step'] = global_step
+            result['loss'] = loss
 
-                output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
-                with open(output_eval_file, "a") as writer:
-                    logger.info("***** Eval results *****")
-                    for key in sorted(result.keys()):
-                        logger.info("  %s = %s", key, str(result[key]))
-                if is_nan:
-                    print("Epoch {} step {} evaluation: NaN happens".format(epoch, step))
-                    # writer.write("%s = %s\n" % (key, str(result[key])))
+            output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
+            with open(output_eval_file, "a") as writer:
+                logger.info("***** Eval results *****")
+                for key in sorted(result.keys()):
+                    logger.info("  %s = %s", key, str(result[key]))
+            if is_nan:
+                print("Epoch {} step {} evaluation: NaN happens".format(epoch, step))
+                # writer.write("%s = %s\n" % (key, str(result[key])))
 
-                # Save a trained model, configuration and tokenizer
-                model_to_save = model.module if hasattr(model,
-                                                        'module') else model  # Only save the model it-self
+            # Save a trained model, configuration and tokenizer
+            model_to_save = model.module if hasattr(model,
+                                                    'module') else model  # Only save the model it-self
 
-                # If we save using the predefined names, we can load using `from_pretrained`
-                output_model_file = os.path.join(args.output_dir,
-                                                 str(epoch) + "_" + WEIGHTS_NAME)
-                output_config_file = os.path.join(args.output_dir, CONFIG_NAME)
+            # If we save using the predefined names, we can load using `from_pretrained`
+            output_model_file = os.path.join(args.output_dir,
+                                             str(epoch) + "_" + WEIGHTS_NAME)
+            output_config_file = os.path.join(args.output_dir, CONFIG_NAME)
 
-                torch.save(model_to_save.state_dict(), output_model_file)
-                model_to_save.config.to_json_file(output_config_file)
-                tokenizer.save_vocabulary(args.output_dir)
+            torch.save(model_to_save.state_dict(), output_model_file)
+            model_to_save.config.to_json_file(output_config_file)
+            tokenizer.save_vocabulary(args.output_dir)
 
 
 if __name__ == "__main__":
