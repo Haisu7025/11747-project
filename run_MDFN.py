@@ -1118,8 +1118,8 @@ def main():
             eval_loss = 0
             nb_eval_steps = 0
             preds = None
-
-            for batch in tqdm(eval_dataloader, desc="Evaluating"):
+            progress_bar_eval = tqdm(eval_dataloader, desc="Evaluating")
+            for j, batch in enumerate(progress_bar_eval):
                 batch = tuple(t.to(device) for t in batch)
 
                 with torch.no_grad():
@@ -1140,8 +1140,9 @@ def main():
                         print("Epoch {} evaluation: NaN happens".format(epoch))
                         print(logits)
                         raise ValueError()
-
-                    eval_loss += tmp_eval_loss.detach().mean().item()
+                    cur_loss = tmp_eval_loss.detach().mean().item()
+                    progress_bar_eval.set_description("Evaulation loss: {}, Iteration {}".format(cur_loss, j))
+                    eval_loss += cur_loss
 
                 nb_eval_steps += 1
                 if preds is None:
