@@ -1136,6 +1136,10 @@ def main():
                     # outputs = eval_model(**inputs)
                     outputs = model(**inputs)
                     tmp_eval_loss, logits = outputs[:2]
+                    if torch.isnan(tmp_eval_loss).any() or torch.isnan(logits).any():
+                        print("Epoch {} evaluation: NaN happens".format(epoch))
+                        print(logits)
+                        raise ValueError()
 
                     eval_loss += tmp_eval_loss.detach().mean().item()
 
