@@ -1063,7 +1063,7 @@ def main():
 
                 output = model(**inputs)
                 loss = output[0]
-                if torch.isnan(loss).any():
+                if torch.isnan(loss).any() or torch.isnan(output[1]).any():
                     print("Epoch {}, iteration {}: NaN happens".format(epoch, step))
                     print(output)
                     raise ValueError()
