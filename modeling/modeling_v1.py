@@ -151,13 +151,13 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         self.gru1 = GRUWithPadding(config, num_rnn)
         self.gru2 = GRUWithPadding(config, num_rnn)
 
-        self.pooler = nn.Linear(4 * config.hidden_size, config.hidden_size)
+        self.pooler = nn.Linear(5 * config.hidden_size, config.hidden_size)
         self.pooler_activation = nn.Tanh()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
         self.classifier2 = nn.Linear(config.hidden_size, 2)
-        self.merger = torch.nn.Linear(3*config.hidden_size, config.hidden_size)
-        self.merger_activation = nn.Tanh()
+        # self.merger = torch.nn.Linear(3*config.hidden_size, config.hidden_size)
+        # self.merger_activation = nn.Tanh()
 
         self.init_weights()
 
