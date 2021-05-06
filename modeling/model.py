@@ -104,7 +104,7 @@ class OCN(nn.Module):
 
         self.query_attentive_pooling = AttentivePooling(
             input_size=config.hidden_size)
-        self.gate_fc = nn.Linear(config.hidden_size * 3, config.hidden_size,
+        self.gate_fc = nn.Linear(config.hidden_size * 2, config.hidden_size,
                                  bias=True)
 
         self.opt_selfattn_sim = TriLinear(config.hidden_size)
@@ -114,9 +114,9 @@ class OCN(nn.Module):
 
         self.score_fc = nn.Linear(config.hidden_size, 1)
         self.hidden_size = config.hidden_size
-        self.aggregation_layer = torch.nn.Linear(2 * config.hidden_size,
-                                                 config.hidden_size)
-        self.aggregation_activation = torch.nn.Tanh()
+        # self.aggregation_layer = torch.nn.Linear(2 * config.hidden_size,
+        #                                          config.hidden_size)
+        # self.aggregation_activation = torch.nn.Tanh()
 
     def forward(self, input_ids, attention_mask, doc_final_pos, num_label,
                 last_layer):
