@@ -1046,8 +1046,9 @@ def main():
             tr_loss = 0
             # nb_tr_examples = 0
             nb_tr_steps = 0
+            progress_bar = tqdm(train_dataloader, desc="Iteration")
             for step, batch in enumerate(
-                    tqdm(train_dataloader, desc="Iteration")):
+                    progress_bar):
                 batch = tuple(t.to(device) for t in batch)
                 inputs = {'input_ids': batch[0],
                           'attention_mask': batch[1],
@@ -1080,7 +1081,10 @@ def main():
                     torch.nn.utils.clip_grad_norm_(model.parameters(),
                                                    args.max_grad_norm)
 
-                tr_loss += loss.detach().item()
+                cur_loss = loss.detach().item()
+
+                tr_loss += cur_loss
+                progress_bar.set_description("Loss: {}, Iteration {}".format(cur_loss, step))
                 nb_tr_steps += 1
                 if (step + 1) % args.gradient_accumulation_steps == 0:
                     if args.fp16:
