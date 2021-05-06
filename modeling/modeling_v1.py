@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import math
 import torch.nn.utils.rnn as rnn_utils
 from modeling.model import *
+from modeling.layer_norm_lstm import LSTM_LN
 
 BertLayerNorm = torch.nn.LayerNorm
 
@@ -85,7 +86,8 @@ class GRUWithPadding(nn.Module):
         super().__init__()
         self.hidden_size = config.hidden_size
         self.num_layers = num_rnn
-        self.biGRU = nn.GRU(config.hidden_size, config.hidden_size, self.num_layers, batch_first = True, bidirectional = True)
+        self.biGRU = LSTM_LN(config.hidden_size, config.hidden_size, self.num_layers, batch_first=True, bidirectional=1)
+        # self.biGRU = nn.GRU(config.hidden_size, config.hidden_size, self.num_layers, batch_first = True, bidirectional = True)
 
     def forward(self, inputs):
         batch_size = len(inputs)
