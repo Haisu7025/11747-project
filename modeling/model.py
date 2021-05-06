@@ -164,7 +164,7 @@ class OCN(nn.Module):
         _, _, dim2, dim3 = opt_correlation.shape
         features = torch.cat([opt_enc,
                               opt_correlation.view(-1, dim2, dim3)], dim=-1)
-        gate = torch.sigmoid(self.gate_fc(torch.cat((opt_enc, opt_correlation), -1)))
+        gate = torch.sigmoid(self.gate_fc(features))
         option = opt_enc * gate + opt_correlation * (1.0 - gate)
         # option = self.aggregation_layer(concat_encodings)
 
