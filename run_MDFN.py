@@ -1114,6 +1114,7 @@ def main():
                 # torch.save(model_to_save.state_dict(), output_model_file)
                 # model_to_save.config.to_json_file(output_config_file)
                 # tokenizer.save_vocabulary(args.output_dir)
+                is_nan = False
                 if step % 500 == 0:
                     model.eval()
                     eval_loss = 0
@@ -1138,7 +1139,7 @@ def main():
                             outputs = model(**inputs)
                             tmp_eval_loss, logits = outputs[:2]
                             if torch.isnan(tmp_eval_loss).any() or torch.isnan(logits).any():
-                                print("Epoch {} evaluation: NaN happens".format(epoch))
+                                is_nan = True
                                 # print(logits)
                                 # raise ValueError()
                             cur_loss = tmp_eval_loss.detach().mean().item()
@@ -1169,6 +1170,8 @@ def main():
                         logger.info("***** Eval results *****")
                         for key in sorted(result.keys()):
                             logger.info("  %s = %s", key, str(result[key]))
+                if is_nan:
+                    print("Epoch {} evaluation: NaN happens".format(epoch))
                     # writer.write("%s = %s\n" % (key, str(result[key])))
 
 
