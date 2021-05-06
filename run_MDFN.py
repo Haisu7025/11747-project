@@ -1171,7 +1171,7 @@ def main():
                         for key in sorted(result.keys()):
                             logger.info("  %s = %s", key, str(result[key]))
                 if is_nan:
-                    print("Epoch {} evaluation: NaN happens".format(epoch))
+                    print("Epoch {} step {} evaluation: NaN happens".format(epoch, step))
                     # writer.write("%s = %s\n" % (key, str(result[key])))
 
 
