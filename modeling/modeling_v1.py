@@ -152,6 +152,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         self.gru2 = GRUWithPadding(config, num_rnn)
 
         self.pooler = nn.Linear(5 * config.hidden_size, config.hidden_size)
+        # self.pooler = nn.Linear(4 * config.hidden_size, config.hidden_size)
         self.pooler_activation = nn.Tanh()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
@@ -283,7 +284,8 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
 
         context_final_states = self.gru1(context_utterance_level) 
         sa_final_states = self.gru2(sa_utterance_level) # (batch_size * num_choice, 2 * hidden_size)
-        
+
+        # final_state = torch.cat((context_final_states, sa_final_states), 1)
         final_state = torch.cat((context_final_states, sa_final_states, correlation_output), 1)
 
         pooled_output = self.pooler_activation(self.pooler(final_state))
