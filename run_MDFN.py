@@ -617,8 +617,8 @@ def Compute_R4_2(preds, labels):
             if j.index(preds[i][labels[i]]) <= 1:
                 p2 += 1
         except Exception as e:
-            print(e)
-            print("sample {}; pred: {}; label: {}".format(i, j, labels[i]))
+            # print(e)
+            # print("sample {}; pred: {}; label: {}".format(i, j, labels[i]))
             error_count += 1
     print("Error count for R4_2: {}".format(error_count))
     return p2 / len(preds)
@@ -632,8 +632,8 @@ def Compute_MRR(preds, labels):
         try:
             mrr += 1 / (j.index(preds[i][labels[i]]) + 1)
         except Exception as e:
-            print(e)
-            print("sample {}; pred: {}; label: {}".format(i, j, labels[i]))
+            # print(e)
+            # print("sample {}; pred: {}; label: {}".format(i, j, labels[i]))
             error_count += 1
     print("Error count for MRR: {}".format(error_count))
     return mrr / len(preds)
