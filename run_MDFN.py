@@ -1040,7 +1040,7 @@ def main():
         eval_sampler = SequentialSampler(eval_data)
         eval_dataloader = DataLoader(eval_data, sampler=eval_sampler,
                                      batch_size=args.eval_batch_size)
-
+        model.load_state_dict(torch.load("mdfn.bin"), strict=False)
         for epoch in trange(int(args.num_train_epochs), desc="Epoch"):
             model.train()
             tr_loss = 0
@@ -1050,6 +1050,8 @@ def main():
                                 leave=True)
             for step, batch in enumerate(
                     progress_bar):
+                if step > 500:
+                    break
                 batch = tuple(t.to(device) for t in batch)
                 inputs = {'input_ids': batch[0],
                           'attention_mask': batch[1],
@@ -1102,65 +1104,65 @@ def main():
 
                     global_step += 1
 
-                is_nan = False
-                if step % 500 == 0:
-                    model.eval()
-                    eval_loss = 0
-                    nb_eval_steps = 0
-                    preds = None
-                    progress_bar_eval = tqdm(eval_dataloader, desc="Evaluating", leave=True, position=0)
-                    for j, batch in enumerate(progress_bar_eval):
-                        batch = tuple(t.to(device) for t in batch)
+            is_nan = False
 
-                        with torch.no_grad():
-                            inputs = {'input_ids': batch[0],
-                                      'attention_mask': batch[1],
-                                      'token_type_ids': batch[2] if args.model_type in [
-                                          'bert', 'xlnet', 'albert'] else None,
-                                      # XLM don't use segment_ids
-                                      'sep_pos': batch[3],
-                                      'turn_ids': batch[4],
-                                      'labels': batch[5],
-                                      'doc_final_pos': batch[6]
-                                      }
-                            # outputs = eval_model(**inputs)
-                            outputs = model(**inputs)
-                            tmp_eval_loss, logits = outputs[:2]
-                            if torch.isnan(tmp_eval_loss).any() or torch.isnan(logits).any():
-                                is_nan = True
-                                # print(logits)
-                                # raise ValueError()
-                            cur_loss = tmp_eval_loss.detach().mean().item()
-                            progress_bar_eval.set_description("Evaulation loss: {}, Iteration {}".format(cur_loss, j))
-                            eval_loss += cur_loss
+            model.eval()
+            eval_loss = 0
+            nb_eval_steps = 0
+            preds = None
+            progress_bar_eval = tqdm(eval_dataloader, desc="Evaluating", leave=True, position=0)
+            for j, batch in enumerate(progress_bar_eval):
+                batch = tuple(t.to(device) for t in batch)
 
-                        nb_eval_steps += 1
-                        if preds is None:
-                            preds = logits.detach().cpu().numpy()
-                            out_label_ids = inputs['labels'].detach().cpu().numpy()
-                        else:
-                            preds = np.append(preds, logits.detach().cpu().numpy(),
-                                              axis=0)
-                            out_label_ids = np.append(out_label_ids, inputs[
-                                'labels'].detach().cpu().numpy(), axis=0)
+                with torch.no_grad():
+                    inputs = {'input_ids': batch[0],
+                              'attention_mask': batch[1],
+                              'token_type_ids': batch[2] if args.model_type in [
+                                  'bert', 'xlnet', 'albert'] else None,
+                              # XLM don't use segment_ids
+                              'sep_pos': batch[3],
+                              'turn_ids': batch[4],
+                              'labels': batch[5],
+                              'doc_final_pos': batch[6]
+                              }
+                    # outputs = eval_model(**inputs)
+                    outputs = model(**inputs)
+                    tmp_eval_loss, logits = outputs[:2]
+                    if torch.isnan(tmp_eval_loss).any() or torch.isnan(logits).any():
+                        is_nan = True
+                        # print(logits)
+                        # raise ValueError()
+                    cur_loss = tmp_eval_loss.detach().mean().item()
+                    progress_bar_eval.set_description("Evaulation loss: {}, Iteration {}".format(cur_loss, j))
+                    eval_loss += cur_loss
 
-                    eval_loss = eval_loss / nb_eval_steps
+                nb_eval_steps += 1
+                if preds is None:
+                    preds = logits.detach().cpu().numpy()
+                    out_label_ids = inputs['labels'].detach().cpu().numpy()
+                else:
+                    preds = np.append(preds, logits.detach().cpu().numpy(),
+                                      axis=0)
+                    out_label_ids = np.append(out_label_ids, inputs[
+                        'labels'].detach().cpu().numpy(), axis=0)
 
-                    result = compute_metrics(task_name, preds, out_label_ids)
-                    loss = tr_loss / nb_tr_steps if args.do_train else None
+                eval_loss = eval_loss / nb_eval_steps
 
-                    result['eval_loss'] = eval_loss
-                    result['global_step'] = global_step
-                    result['loss'] = loss
+                result = compute_metrics(task_name, preds, out_label_ids)
+                loss = tr_loss / nb_tr_steps if args.do_train else None
 
-                    output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
-                    with open(output_eval_file, "a") as writer:
-                        logger.info("***** Eval results *****")
-                        for key in sorted(result.keys()):
-                            logger.info("  %s = %s", key, str(result[key]))
-                if is_nan:
-                    print("Epoch {} step {} evaluation: NaN happens".format(epoch, step))
-                    # writer.write("%s = %s\n" % (key, str(result[key])))
+                result['eval_loss'] = eval_loss
+                result['global_step'] = global_step
+                result['loss'] = loss
+
+                output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
+                with open(output_eval_file, "a") as writer:
+                    logger.info("***** Eval results *****")
+                    for key in sorted(result.keys()):
+                        logger.info("  %s = %s", key, str(result[key]))
+            if is_nan:
+                print("Epoch {} step {} evaluation: NaN happens".format(epoch, step))
+                # writer.write("%s = %s\n" % (key, str(result[key])))
 
             # Save a trained model, configuration and tokenizer
             model_to_save = model.module if hasattr(model,

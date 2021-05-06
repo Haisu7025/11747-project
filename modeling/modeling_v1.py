@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import math
 import torch.nn.utils.rnn as rnn_utils
 from modeling.model import *
-from modeling.layer_norm_lstm_2 import LayerNormLSTM
+from modeling.layer_norm_lstm import LSTM_LN
 
 BertLayerNorm = torch.nn.LayerNorm
 
@@ -80,12 +80,12 @@ class MHA(nn.Module):
         layernormed_context_layer = self.LayerNorm(input_ids_a + projected_context_layer_dropout)
         return (layernormed_context_layer, attention_probs) if output_attentions else (layernormed_context_layer,)
 
+
 class GRUWithPadding(nn.Module):
     def __init__(self, config, num_rnn = 1):
         super().__init__()
         self.hidden_size = config.hidden_size
         self.num_layers = num_rnn
-        self.biGRU = LayerNormLSTM(config.hidden_size, config.hidden_size, self.num_layers, bidirectional=True)
         self.biGRU = nn.GRU(config.hidden_size, config.hidden_size, self.num_layers, batch_first = True, bidirectional = True)
 
     def forward(self, inputs):
@@ -96,12 +96,11 @@ class GRUWithPadding(nn.Module):
         inputs_lengths = [len(i[1]) for i in sorted_inputs]
 
         inputs = rnn_utils.pad_sequence(inputs, batch_first = True)
-        # inputs = rnn_utils.pack_padded_sequence(inputs, inputs_lengths, batch_first = True) #(batch_size, seq_len, hidden_size)
+        inputs = rnn_utils.pack_padded_sequence(inputs, inputs_lengths, batch_first = True) #(batch_size, seq_len, hidden_size)
 
         h0 = torch.rand(2 * self.num_layers, batch_size, self.hidden_size).to(inputs.data.device) # (2, batch_size, hidden_size)
         # self.biGRU.flatten_parameters()
-        out, _ = self.biGRU(inputs, h0)
-        out = rnn_utils.pack_sequence(out, enforce_sorted=False)# (batch_size, 2, hidden_size )
+        out, _ = self.biGRU(inputs, h0) # (batch_size, 2, hidden_size )
         out_pad, out_len = rnn_utils.pad_packed_sequence(out, batch_first = True) # (batch_size, seq_len, 2 * hidden_size)
 
         _, idx2 = torch.sort(torch.tensor(idx_inputs))
@@ -153,9 +152,10 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         self.gru1 = GRUWithPadding(config, num_rnn)
         self.gru2 = GRUWithPadding(config, num_rnn)
 
-        self.pooler = nn.Linear(5 * config.hidden_size, config.hidden_size)
-        # self.pooler = nn.Linear(4 * config.hidden_size, config.hidden_size)
+        self.pooler = nn.Linear(4 * config.hidden_size, config.hidden_size)
+        self.pooler_2 = nn.Linear(2 * config.hidden_size, config.hidden_size)
         self.pooler_activation = nn.Tanh()
+        self.pooler_activation_2 = nn.Tanh()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
         self.classifier2 = nn.Linear(config.hidden_size, 2)
@@ -288,9 +288,11 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         sa_final_states = self.gru2(sa_utterance_level) # (batch_size * num_choice, 2 * hidden_size)
 
         # final_state = torch.cat((context_final_states, sa_final_states), 1)
-        final_state = torch.cat((context_final_states, sa_final_states, correlation_output), 1)
+        final_state = torch.cat((context_final_states, sa_final_states), 1)
 
         pooled_output = self.pooler_activation(self.pooler(final_state))
+        state = torch.cat([pooled_output, correlation_output], dim=-1)
+        pooled_output = self.pooler_activation_2(self.pooler_2(state))
         # pooled_output = self.merger_activation(self.merger(torch.cat([correlation_output, pooled_output], dim=-1)))
         pooled_output = self.dropout(pooled_output)
 
