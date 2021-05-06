@@ -100,7 +100,7 @@ class GRUWithPadding(nn.Module):
         inputs = rnn_utils.pack_padded_sequence(inputs, inputs_lengths, batch_first = True) #(batch_size, seq_len, hidden_size)
 
         h0 = torch.rand(2 * self.num_layers, batch_size, self.hidden_size).to(inputs.data.device) # (2, batch_size, hidden_size)
-        self.biGRU.flatten_parameters()
+        # self.biGRU.flatten_parameters()
         out, _ = self.biGRU(inputs, h0) # (batch_size, 2, hidden_size )
         out_pad, out_len = rnn_utils.pad_packed_sequence(out, batch_first = True) # (batch_size, seq_len, 2 * hidden_size)
 
