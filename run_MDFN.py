@@ -1119,7 +1119,7 @@ def main():
             eval_loss = 0
             nb_eval_steps = 0
             preds = None
-            progress_bar_eval = tqdm(eval_dataloader, desc="Evaluating", leave=True, postion=0)
+            progress_bar_eval = tqdm(eval_dataloader, desc="Evaluating", leave=True, position=0)
             for j, batch in enumerate(progress_bar_eval):
                 batch = tuple(t.to(device) for t in batch)
 
