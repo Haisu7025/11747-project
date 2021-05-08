@@ -780,7 +780,7 @@ def main():
     parser.add_argument('--content_dir', type=str, default='',
                         help="weights save path")
 
-    parser.add_argument('--max_steps', type=int, default='',
+    parser.add_argument('--max_steps', type=int, default=10000,
                         help="Max steps within an epoch")
     args = parser.parse_args()
 
@@ -1048,7 +1048,8 @@ def main():
         eval_sampler = SequentialSampler(eval_data)
         eval_dataloader = DataLoader(eval_data, sampler=eval_sampler,
                                      batch_size=args.eval_batch_size)
-        # model.load_state_dict(torch.load(args.content_dir), strict=False)
+        if args.content_dir:
+            model.load_state_dict(torch.load(args.content_dir), strict=False)
         for epoch in trange(int(args.num_train_epochs), desc="Epoch"):
             model.train()
             tr_loss = 0
