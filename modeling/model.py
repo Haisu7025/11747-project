@@ -6,6 +6,7 @@ import torch.nn as nn
 from torch.nn import init
 from torch.nn import CrossEntropyLoss
 import torch.nn.functional as F
+import torch.nn.utils.rnn as rnn_utils
 
 from transformers import BertPreTrainedModel, BertModel, ElectraPreTrainedModel, \
     ElectraModel
@@ -118,19 +119,71 @@ class OCN(nn.Module):
         #                                          config.hidden_size)
         # self.aggregation_activation = torch.nn.Tanh()
 
-    def forward(self, input_ids, attention_mask, doc_final_pos, num_label,
-                last_layer):
-        bsz = input_ids.size(0) // num_label
-        doc_final_pos = doc_final_pos[0][0]
+    def _custom_pad(self, tensor_list, max_dim, dim=-1):
+        new_list = []
+        for tensor in tensor_list:
+            pad_dim = [0, 0] * (-1-dim) + [0, max_dim - tensor.shape[1]]
+            new_tensor = F.pad(tensor, pad_dim, "constant", 0)
+            new_list.append(new_tensor)
+        return torch.cat(new_list, dim=0)
 
-        doc_enc = last_layer[:, 0: doc_final_pos - 1, :]
-        opt_enc = last_layer[:, doc_final_pos - 1:, :]
-        opt_total_len = opt_enc.size(1)
-        doc_mask = attention_mask[:, 0: doc_final_pos - 1] > 0
-        opt_mask = attention_mask[:, doc_final_pos - 1:] > 0
+    def forward(self, last_layer, attention_mask, all_doc_final_pos, num_label):
 
-        opt_mask = opt_mask.view(bsz, num_label, opt_total_len)
-        opt_enc = opt_enc.view(bsz, num_label, opt_total_len, self.hidden_size)
+        bsz = attention_mask.size(0) // num_label
+        last_layer = last_layer.view(bsz, num_label, -1, self.hidden_size)
+        attention_mask = attention_mask.view(bsz, num_label, -1)
+        all_doc_final_pos = all_doc_final_pos.view(bsz, num_label)
+
+        doc_enc_batch_list = []
+        opt_enc_batch_list = []
+        doc_mask_batch_list = []
+        opt_mask_batch_list = []
+        minus_inf = float("-inf")
+        start_index = 0
+        for index_batch in range(bsz):
+            doc_enc_label_list = []
+            opt_enc_label_list = []
+            doc_mask_label_list = []
+            opt_mask_label_list = []
+            label_final_pos = all_doc_final_pos[index_batch]
+            for index_label in range(num_label):
+                doc_final_pos = label_final_pos[index_label]
+                single_doc_enc = last_layer[index_batch, index_label,
+                                 0: doc_final_pos, :]
+                single_opt_enc = last_layer[index_batch, index_label,
+                                 doc_final_pos:, :]
+
+                single_doc_mask = attention_mask[index_batch, index_label,
+                                  0: doc_final_pos] > 0
+                single_opt_mask = attention_mask[index_batch, index_label,
+                                  doc_final_pos:] > 0
+                doc_enc_label_list.append(single_doc_enc)
+                opt_enc_label_list.append(single_opt_enc)
+                doc_mask_label_list.append(single_doc_mask)
+                opt_mask_label_list.append(single_opt_mask)
+            doc_enc_batch_list.append(
+                rnn_utils.pad_sequence(doc_enc_label_list, batch_first=True,
+                                       padding_value=0))
+            opt_enc_batch_list.append(
+                rnn_utils.pad_sequence(opt_enc_label_list, batch_first=True,
+                                       padding_value=0))
+            doc_mask_batch_list.append(
+                rnn_utils.pad_sequence(doc_mask_label_list, batch_first=True,
+                                       padding_value=False))
+            opt_mask_batch_list.append(
+                rnn_utils.pad_sequence(opt_mask_label_list, batch_first=True,
+                                       padding_value=False))
+        max_doc_length = max([doc.shape[1] for doc in doc_enc_batch_list])
+        max_opt_length = max([opt.shape[1] for opt in opt_enc_batch_list])
+        doc_enc = self._custom_pad(doc_enc_batch_list, max_doc_length, -2).view(
+            bsz * num_label, -1, self.hidden_size)
+        doc_mask = self._custom_pad(doc_mask_batch_list, max_doc_length, -1).view(
+            bsz * num_label, -1)
+        opt_enc = self._custom_pad(opt_enc_batch_list, max_opt_length, -2).view(
+            bsz, num_label, -1, self.hidden_size)
+        opt_mask = self._custom_pad(opt_mask_batch_list, max_opt_length, -1).view(
+            bsz, num_label, -1)
+        # doc_enc.masked_fill()
 
         # Option Comparison
         correlation_list = []
@@ -159,8 +212,8 @@ class OCN(nn.Module):
                             correlation_list]
         opt_correlation = torch.cat(correlation_list, dim=1)
 
-        opt_mask = opt_mask.view(bsz * num_label, opt_total_len)
-        opt_enc = opt_enc.view(bsz * num_label, opt_total_len, self.hidden_size)
+        opt_mask = opt_mask.view(bsz * num_label, -1)
+        opt_enc = opt_enc.view(bsz * num_label, -1, self.hidden_size)
         _, _, dim2, dim3 = opt_correlation.shape
         opt_correlation = opt_correlation.view(-1, dim2, dim3)
         features = torch.cat([opt_enc,
@@ -181,9 +234,10 @@ class OCN(nn.Module):
         fusion = F.relu(fusion)
 
         fusion = fusion.masked_fill(
-            (~opt_mask).unsqueeze(-1).expand(bsz * num_label, opt_total_len,
+            (~opt_mask).unsqueeze(-1).expand(bsz * num_label, -1,
                                              self.hidden_size),
             -float('inf'))
+        # 0)
         fusion, _ = fusion.max(dim=1)
         # 4, 768
         return fusion

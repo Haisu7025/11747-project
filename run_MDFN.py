@@ -375,7 +375,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
             # sep_pos = list of indices of the SEP
             # turn_ids = list of ints, each number indicates a turn
             tokens += tokens_b
-            index_doc_sep = len(tokens)
+            index_doc_sep = len(tokens) - 1
             segment_ids = [0] * (len(tokens))
 
             tokens_a += ["[SEP]"]
@@ -408,6 +408,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
             assert len(segment_ids) == max_seq_length
             assert len(context_len) == max_utterance_num
             assert len(turn_ids) == max_seq_length
+            assert tokens[index_doc_sep] == "[SEP]"
 
             choices_features.append((
                                     input_ids, input_mask, segment_ids, sep_pos,
@@ -871,9 +872,11 @@ def main():
                                                 do_lower_case=args.do_lower_case,
                                                 cache_dir=args.cache_dir if args.cache_dir else None)
     model = model_class.from_pretrained(args.model_name_or_path,
+
                                         from_tf=bool(
                                             '.ckpt' in args.model_name_or_path),
                                         config=config,
+
                                         cache_dir=args.cache_dir if args.cache_dir else None)
 
     train_examples = None
@@ -1045,7 +1048,7 @@ def main():
         eval_sampler = SequentialSampler(eval_data)
         eval_dataloader = DataLoader(eval_data, sampler=eval_sampler,
                                      batch_size=args.eval_batch_size)
-        model.load_state_dict(torch.load(args.content_dir), strict=False)
+        # model.load_state_dict(torch.load(args.content_dir), strict=False)
         for epoch in trange(int(args.num_train_epochs), desc="Epoch"):
             model.train()
             tr_loss = 0

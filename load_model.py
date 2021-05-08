@@ -777,7 +777,12 @@ def main():
     parser.add_argument('--server_port', type=str, default='',
                         help="Can be used for distant debugging.")
     parser.add_argument('--model_path', type=str, default='',
-                        help="path for the saved model", required=True)
+                        help="path for the saved model")
+    parser.add_argument('--content_dir', type=str, default='',
+                        help="weights save path")
+
+    parser.add_argument('--max_steps', type=int, default='',
+                        help="Max steps within an epoch")
     args = parser.parse_args()
 
     if args.server_ip and args.server_port:
@@ -973,7 +978,7 @@ def main():
         eval_dataloader = DataLoader(eval_data, sampler=eval_sampler,
                                      batch_size=args.eval_batch_size)
 
-        model.load_state_dict(torch.load(args.model_path))
+        # model.load_state_dict(torch.load(args.model_path))
 
         model.eval()
         eval_loss = 0

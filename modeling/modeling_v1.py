@@ -134,7 +134,7 @@ class FuseLayer(nn.Module):
 
 
 class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
-    def __init__(self, config, num_rnn = 1, num_decoupling = 1):
+    def __init__(self, config, num_rnn = 1, num_decoupling = 1,):
         super().__init__(config)
         print("Using electra")
         self.electra = ElectraModel(config)
@@ -190,7 +190,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         
         turn_ids = turn_ids.unsqueeze(-1).repeat([1,1,turn_ids.size(1)])
         last_layer = self.electra(input_ids, token_type_ids, attention_mask)['last_hidden_state']
-        correlation_output = self.ocn(input_ids, attention_mask, doc_final_pos, num_labels, last_layer)
+        correlation_output = self.ocn(last_layer, attention_mask, doc_final_pos, num_labels)
         #print("sep_pos:", sep_pos)
         
         position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
