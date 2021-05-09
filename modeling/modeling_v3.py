@@ -8,7 +8,7 @@ import torch.nn.utils.rnn as rnn_utils
 
 
 BertLayerNorm = torch.nn.LayerNorm
-
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 ACT2FN = {"gelu": F.gelu, "relu": F.relu}
 
 class MHA(nn.Module):
@@ -309,13 +309,19 @@ class ElectraForMultipleChoicePlusV3(ElectraPreTrainedModel):
         option = opt_enc_t * gate + opt_correlation * (1.0 - gate)
         
         # replace option
+        max_length = last_layer.size(1)
         for idx in range(last_layer.size(0)):
             single_doc_final_pos = doc_final_pos_[idx]
-            single_doc_mask = torch.ones(last_layer[idx].shape)
+            single_doc_mask = torch.ones(last_layer[idx].shape).to(device)
             single_doc_mask[:single_doc_final_pos, :] = 0
             single_doc_mask = single_doc_mask.bool()
             single_option_mask = ~single_doc_mask
-            last_layer[idx] = option[idx].masked_fill(single_option_mask, 0) + last_layer[idx].masked_fill(single_doc_mask, 0)
+            single_option = option[idx]
+            padded_option = F.pad(single_option, (0, 0, max_length - single_option.shape[0], 0), "constant", 0)
+            assert(padded_option.shape[0] == last_layer[idx].shape[0])
+            masked_option = padded_option.masked_fill(single_option_mask, 0)
+            masked_doc = last_layer[idx].masked_fill(single_doc_mask, 0)
+            last_layer[idx] =  masked_option + masked_doc
 
         position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
         inputs_embeds = (
