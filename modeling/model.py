@@ -225,7 +225,7 @@ class OCN(nn.Module):
         (attn, _), (coattn, _) = self.attention(option, doc_enc, doc_enc,
                                                 opt_mask, doc_mask)
         fusion = self.attn_fc(torch.cat((option, attn, coattn), -1))
-        fusion = F.relu(fusion)
+        fusion = F.tanh(fusion)
 
         (attn, _), _ = self.opt_self_attention(fusion, fusion, fusion, opt_mask,
                                                opt_mask)
