@@ -190,7 +190,7 @@ class OptAttention(nn.Module):
         return (attn, attn_weight), (co_attn, co_weight)
 
 
-class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
+class ElectraForMultipleChoicePlusV3(ElectraPreTrainedModel):
     def __init__(self, config, num_rnn = 1, num_decoupling = 1,):
         super().__init__(config)
         print("Using electra")
@@ -311,7 +311,11 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         # replace option
         for idx in range(last_layer.size(0)):
             single_doc_final_pos = doc_final_pos_[idx]
-            last_layer[idx, single_doc_final_pos:] = option[idx, :last_layer.size(1) - single_doc_final_pos]
+            single_doc_mask = torch.ones(last_layer[idx].shape)
+            single_doc_mask[:single_doc_final_pos, :] = 0
+            single_doc_mask = single_doc_mask.bool()
+            single_option_mask = ~single_doc_mask
+            last_layer[idx] = option[idx].masked_fill(single_option_mask, 0) + last_layer[idx].masked_fill(single_doc_mask, 0)
 
         position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
         inputs_embeds = (

@@ -16,42 +16,33 @@
 """BERT finetuning runner."""
 
 from __future__ import absolute_import, division, print_function
-import datetime
+
 import argparse
-import csv
+import glob
+import json
 import logging
 import os
-import random
-import sys
 import pickle
+import random
+import re
+
 import numpy as np
 import torch
-import json
-from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
+from torch.utils.data import (DataLoader, SequentialSampler,
                               TensorDataset)
-from torch.utils.data.distributed import DistributedSampler
-from tqdm import tqdm, trange
-import glob
+from tqdm import tqdm
+from transformers import ElectraConfig, ElectraTokenizer, AdamW
 
-from torch.nn import CrossEntropyLoss, MSELoss
-from scipy.stats import pearsonr, spearmanr
-from sklearn.metrics import matthews_corrcoef, f1_score
-
-from transformers import (BertConfig, BertForMultipleChoice, BertTokenizer,
-                          ElectraConfig, ElectraTokenizer, RobertaConfig,
-                          RobertaTokenizer, RobertaForMultipleChoice)
-from modeling import (ElectraForMultipleChoicePlus, BertForMultipleChoicePlus,
-                      RobertaForMultipleChoicePlus)
-from transformers import (AdamW, WEIGHTS_NAME, CONFIG_NAME)
-import re
-import os
+from modeling.modeling_v1 import (ElectraForMultipleChoicePlus)
+from modeling.modeling_v2 import (ElectraForMultipleChoicePlusV2)
+from modeling.modeling_v3 import (ElectraForMultipleChoicePlusV3)
 
 logger = logging.getLogger(__name__)
 
 MODEL_CLASSES = {
-    'bert': (BertConfig, BertForMultipleChoicePlus, BertTokenizer),
-    'roberta': (RobertaConfig, RobertaForMultipleChoicePlus, RobertaTokenizer),
-    'electra': (ElectraConfig, ElectraForMultipleChoicePlus, ElectraTokenizer)
+    'electra_v1': (ElectraConfig, ElectraForMultipleChoicePlus, ElectraTokenizer),
+    'electra_v2': (ElectraConfig, ElectraForMultipleChoicePlusV2, ElectraTokenizer),
+    'electra_v3': (ElectraConfig, ElectraForMultipleChoicePlusV3, ElectraTokenizer)
 }
 
 
@@ -981,7 +972,7 @@ def main():
         # model.load_state_dict(torch.load(args.model_path))
 
         model.eval()
-        eval_loss = 0
+        eval_loss = []
         nb_eval_steps = 0
         preds = None
         progress_bar_eval = tqdm(eval_dataloader, desc="Evaluating")
@@ -1008,7 +999,7 @@ def main():
                     raise ValueError()
                 cur_loss = tmp_eval_loss.detach().mean().item()
                 progress_bar_eval.set_description("Evaulation loss: {}, Iteration {}".format(cur_loss, j))
-                eval_loss += cur_loss
+                eval_loss.append(cur_loss)
 
             nb_eval_steps += 1
             if preds is None:
@@ -1020,11 +1011,18 @@ def main():
                 out_label_ids = np.append(out_label_ids, inputs[
                     'labels'].detach().cpu().numpy(), axis=0)
 
-        eval_loss = eval_loss / nb_eval_steps
+        mean_eval_loss = np.mean(eval_loss)
+        std_eval_loss = np.std(eval_loss)
+        max_eval_loss = np.max(eval_loss)
+        min_eval_loss = np.min(eval_loss)
+
         result = compute_metrics(task_name, preds, out_label_ids)
         # loss = tr_loss / nb_tr_steps if args.do_train else None
 
-        result['eval_loss'] = eval_loss
+        result['mean_eval_loss'] = mean_eval_loss
+        result['std_eval_loss'] = std_eval_loss
+        result['min_loss'] = min_eval_loss
+        result['max_loss'] = max_eval_loss
         result['global_step'] = global_step
         # result['loss'] = loss
 

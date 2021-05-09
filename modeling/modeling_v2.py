@@ -5,6 +5,8 @@ from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss, Conv1d
 import torch.nn.functional as F
 import math
 import torch.nn.utils.rnn as rnn_utils
+from modeling.model import *
+from modeling.layer_norm_lstm import LSTM_LN
 
 BertLayerNorm = torch.nn.LayerNorm
 
@@ -97,7 +99,7 @@ class GRUWithPadding(nn.Module):
         inputs = rnn_utils.pack_padded_sequence(inputs, inputs_lengths, batch_first = True) #(batch_size, seq_len, hidden_size)
 
         h0 = torch.rand(2 * self.num_layers, batch_size, self.hidden_size).to(inputs.data.device) # (2, batch_size, hidden_size)
-        self.biGRU.flatten_parameters()
+        # self.biGRU.flatten_parameters()
         out, _ = self.biGRU(inputs, h0) # (batch_size, 2, hidden_size )
         out_pad, out_len = rnn_utils.pad_packed_sequence(out, batch_first = True) # (batch_size, seq_len, 2 * hidden_size)
 
@@ -131,11 +133,12 @@ class FuseLayer(nn.Module):
         return fuse_prob * input1 + (1 - fuse_prob) * input2
 
 
-class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
-    def __init__(self, config, num_rnn = 1, num_decoupling = 1):
+class ElectraForMultipleChoicePlusV2(ElectraPreTrainedModel):
+    def __init__(self, config, num_rnn = 1, num_decoupling = 1,):
         super().__init__(config)
-
+        print("Using electra")
         self.electra = ElectraModel(config)
+        self.ocn = OCN(config)
         self.num_decoupling = num_decoupling
 
         self.localMHA = nn.ModuleList([MHA(config) for _ in range(num_decoupling)])
@@ -150,10 +153,14 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         self.gru2 = GRUWithPadding(config, num_rnn)
 
         self.pooler = nn.Linear(4 * config.hidden_size, config.hidden_size)
+        self.pooler_2 = nn.Linear(2 * config.hidden_size, config.hidden_size)
         self.pooler_activation = nn.Tanh()
+        self.pooler_activation_2 = nn.Tanh()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
         self.classifier2 = nn.Linear(config.hidden_size, 2)
+        # self.merger = torch.nn.Linear(3*config.hidden_size, config.hidden_size)
+        # self.merger_activation = nn.Tanh()
 
         self.init_weights()
 
@@ -170,6 +177,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         labels=None,
         output_attentions=None,
         output_hidden_states=None,
+        doc_final_pos=None
     ):
         num_labels = input_ids.shape[1] if input_ids is not None else inputs_embeds.shape[1]
 
@@ -181,7 +189,8 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         turn_ids = turn_ids.view(-1, turn_ids.size(-1)) if turn_ids is not None else None
         
         turn_ids = turn_ids.unsqueeze(-1).repeat([1,1,turn_ids.size(1)])
-        
+        last_layer = self.electra(input_ids, token_type_ids, attention_mask)['last_hidden_state']
+        correlation_output = self.ocn(last_layer, attention_mask, doc_final_pos, num_labels)
         #print("sep_pos:", sep_pos)
         
         position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
@@ -277,10 +286,14 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
 
         context_final_states = self.gru1(context_utterance_level) 
         sa_final_states = self.gru2(sa_utterance_level) # (batch_size * num_choice, 2 * hidden_size)
-        
+
+        # final_state = torch.cat((context_final_states, sa_final_states), 1)
         final_state = torch.cat((context_final_states, sa_final_states), 1)
 
         pooled_output = self.pooler_activation(self.pooler(final_state))
+        state = torch.cat([pooled_output, correlation_output], dim=-1)
+        pooled_output = self.pooler_activation_2(self.pooler_2(state))
+        # pooled_output = self.merger_activation(self.merger(torch.cat([correlation_output, pooled_output], dim=-1)))
         pooled_output = self.dropout(pooled_output)
 
         if num_labels > 2:
@@ -304,6 +317,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         super().__init__(config)
 
         self.bert = BertModel(config)
+        self.ocn = OCN(config, self.bert)
         self.num_decoupling = num_decoupling
 
         self.localMHA = nn.ModuleList([MHA(config) for _ in range(num_decoupling)])
@@ -322,7 +336,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
         self.classifier2 = nn.Linear(config.hidden_size, 2)
-
+        self.aggregation_layer = torch.nn.Conv1d(in_channels=2, out_channels=1, kernel_size=1)
         self.init_weights()
 
     def forward(
@@ -338,7 +352,9 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         labels=None,
         output_attentions=None,
         output_hidden_states=None,
+        doc_final_pos=None
     ):
+        print("Using bert")
         num_labels = input_ids.shape[1] if input_ids is not None else inputs_embeds.shape[1]
 
         input_ids = input_ids.view(-1, input_ids.size(-1)) if input_ids is not None else None 
@@ -349,7 +365,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         turn_ids = turn_ids.view(-1, turn_ids.size(-1)) if turn_ids is not None else None
         
         turn_ids = turn_ids.unsqueeze(-1).repeat([1,1,turn_ids.size(1)])
-        
+
         #print("sep_pos:", sep_pos)
         
         position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
@@ -358,7 +374,8 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
             if inputs_embeds is not None
             else None
         )
-        
+        correlation_output = self.ocn(input_ids, token_type_ids, attention_mask, doc_final_pos)
+        # outputs2 = self.ocn(input_ids, token_type_ids, attention_mask, doc_final_pos)
         #print("size of sequence_output:", sequence_output.size())
         attention_mask = attention_mask.unsqueeze(1).unsqueeze(2) # (batch_size * num_choice, 1, 1, seq_len)
         attention_mask = attention_mask.to(dtype=self.dtype)  # fp16 compatibility
@@ -408,6 +425,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
             output_hidden_states=output_hidden_states,
         )
 
+
         sequence_output = outputs[0] # (batch_size * num_choice, seq_len, hidden_size)
 
 
@@ -451,6 +469,7 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         pooled_output = self.pooler_activation(self.pooler(final_state))
         pooled_output = self.dropout(pooled_output)
 
+        pooled_output = correlation_output + pooled_output
         if num_labels > 2:
             logits = self.classifier(pooled_output)
         else:
@@ -468,9 +487,10 @@ class BertForMultipleChoicePlus(BertPreTrainedModel):
         return outputs #(loss), reshaped_logits, (hidden_states), (attentions)
 
 class RobertaForMultipleChoicePlus(BertPreTrainedModel):
+    # num_label=4, max_doc_len, max_query_len, max_option_len
     def __init__(self, config, num_rnn = 1, num_decoupling = 1):
         super().__init__(config)
-
+        print("Using roberta")
         self.roberta = RobertaModel(config)
         self.num_decoupling = num_decoupling
 
@@ -490,6 +510,7 @@ class RobertaForMultipleChoicePlus(BertPreTrainedModel):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
         self.classifier2 = nn.Linear(config.hidden_size, 2)
+        self.aggregation_layer = torch.nn.Conv1d(in_channels=2, out_channels=1, kernel_size=1)
 
         self.init_weights()
 

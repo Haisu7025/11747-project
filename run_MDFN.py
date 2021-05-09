@@ -16,41 +16,35 @@
 """BERT finetuning runner."""
 
 from __future__ import absolute_import, division, print_function
-import datetime
+
 import argparse
-import csv
+import glob
+import json
 import logging
 import os
-import random
-import sys
 import pickle
+import random
+import re
+
 import numpy as np
 import torch
-import json
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
-import glob
+from transformers import ElectraConfig, ElectraTokenizer, AdamW, WEIGHTS_NAME, \
+    CONFIG_NAME
 
-from torch.nn import CrossEntropyLoss, MSELoss
-from scipy.stats import pearsonr, spearmanr
-from sklearn.metrics import matthews_corrcoef, f1_score
-
-from transformers import (BertConfig, BertForMultipleChoice, BertTokenizer,
-                          ElectraConfig, ElectraTokenizer, RobertaConfig,
-                          RobertaTokenizer, RobertaForMultipleChoice)
-from modeling_v2 import (ElectraForMultipleChoicePlus)
-from transformers import (AdamW, WEIGHTS_NAME, CONFIG_NAME)
-import re
-import os
+from modeling.modeling_v1 import (ElectraForMultipleChoicePlus)
+from modeling.modeling_v2 import (ElectraForMultipleChoicePlusV2)
+from modeling.modeling_v3 import (ElectraForMultipleChoicePlusV3)
 
 logger = logging.getLogger(__name__)
 
 MODEL_CLASSES = {
-    # 'bert': (BertConfig, BertForMultipleChoicePlus, BertTokenizer),
-    # 'roberta': (RobertaConfig, RobertaForMultipleChoicePlus, RobertaTokenizer),
-    'electra': (ElectraConfig, ElectraForMultipleChoicePlus, ElectraTokenizer)
+    'electra_v1': (ElectraConfig, ElectraForMultipleChoicePlus, ElectraTokenizer),
+    'electra_v2': (ElectraConfig, ElectraForMultipleChoicePlusV2, ElectraTokenizer),
+    'electra_v3': (ElectraConfig, ElectraForMultipleChoicePlusV3, ElectraTokenizer)
 }
 
 
