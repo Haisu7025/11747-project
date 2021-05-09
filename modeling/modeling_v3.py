@@ -317,7 +317,8 @@ class ElectraForMultipleChoicePlusV3(ElectraPreTrainedModel):
             single_doc_mask = single_doc_mask.bool()
             single_option_mask = ~single_doc_mask
             single_option = option[idx]
-            padded_option = F.pad(single_option, (0, 0, max_length - single_option.shape[0], 0), "constant", 0)
+            padded_option = F.pad(single_option, (0, 0, single_doc_final_pos, max_length - single_option.shape[0] - single_doc_final_pos), "constant", 0)
+            # padded_option = F.pad(single_option, (0, 0, max_length - single_option.shape[0], 0), "constant", 0)
             assert(padded_option.shape[0] == last_layer[idx].shape[0])
             masked_option = padded_option.masked_fill(single_option_mask, 0)
             masked_doc = last_layer[idx].masked_fill(single_doc_mask, 0)
