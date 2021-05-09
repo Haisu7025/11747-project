@@ -40,8 +40,7 @@ from sklearn.metrics import matthews_corrcoef, f1_score
 from transformers import (BertConfig, BertForMultipleChoice, BertTokenizer,
                           ElectraConfig, ElectraTokenizer, RobertaConfig,
                           RobertaTokenizer, RobertaForMultipleChoice)
-from modeling import (ElectraForMultipleChoicePlus, BertForMultipleChoicePlus,
-                      RobertaForMultipleChoicePlus)
+from modeling_v2 import (ElectraForMultipleChoicePlus)
 from transformers import (AdamW, WEIGHTS_NAME, CONFIG_NAME)
 import re
 import os
@@ -49,8 +48,8 @@ import os
 logger = logging.getLogger(__name__)
 
 MODEL_CLASSES = {
-    'bert': (BertConfig, BertForMultipleChoicePlus, BertTokenizer),
-    'roberta': (RobertaConfig, RobertaForMultipleChoicePlus, RobertaTokenizer),
+    # 'bert': (BertConfig, BertForMultipleChoicePlus, BertTokenizer),
+    # 'roberta': (RobertaConfig, RobertaForMultipleChoicePlus, RobertaTokenizer),
     'electra': (ElectraConfig, ElectraForMultipleChoicePlus, ElectraTokenizer)
 }
 
