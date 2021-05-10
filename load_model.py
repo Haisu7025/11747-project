@@ -25,7 +25,9 @@ import os
 import pickle
 import random
 import re
+from collections import OrderedDict
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch.utils.data import (DataLoader, SequentialSampler,
@@ -40,12 +42,12 @@ from modeling.modeling_v4 import (ElectraForMultipleChoicePlusV4)
 
 logger = logging.getLogger(__name__)
 
-MODEL_CLASSES = {
+MODEL_CLASSES = OrderedDict({
+    'electra_v3': (ElectraConfig, ElectraForMultipleChoicePlusV3, ElectraTokenizer),
     'electra_v1': (ElectraConfig, ElectraForMultipleChoicePlus, ElectraTokenizer),
     'electra_v2': (ElectraConfig, ElectraForMultipleChoicePlusV2, ElectraTokenizer),
-    'electra_v3': (ElectraConfig, ElectraForMultipleChoicePlusV3, ElectraTokenizer),
     'electra_v4': (ElectraConfig, ElectraForMultipleChoicePlusV4, ElectraTokenizer)
-}
+})
 
 
 def select_field(features, field):
@@ -855,185 +857,155 @@ def main():
 
     label_list = processor.get_labels()
     num_labels = len(label_list)
+    total_eval_loss = []
+    for i, (config_class, model_class, tokenizer_class) in enumerate(MODEL_CLASSES.values()):
 
-    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+        config = config_class.from_pretrained(args.model_name_or_path,
+                                              num_labels=num_labels,
+                                              finetuning_task=args.task_name,
+                                              cache_dir=args.cache_dir if args.cache_dir else None)
+        tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path,
+                                                    do_lower_case=args.do_lower_case,
+                                                    cache_dir=args.cache_dir if args.cache_dir else None)
+        model = model_class.from_pretrained(args.model_name_or_path,
+                                            from_tf=bool(
+                                                '.ckpt' in args.model_name_or_path),
+                                            config=config,
+                                            cache_dir=args.cache_dir if args.cache_dir else None)
 
-    config = config_class.from_pretrained(args.model_name_or_path,
-                                          num_labels=num_labels,
-                                          finetuning_task=args.task_name,
-                                          cache_dir=args.cache_dir if args.cache_dir else None)
-    tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path,
-                                                do_lower_case=args.do_lower_case,
-                                                cache_dir=args.cache_dir if args.cache_dir else None)
-    model = model_class.from_pretrained(args.model_name_or_path,
-                                        from_tf=bool(
-                                            '.ckpt' in args.model_name_or_path),
-                                        config=config,
-                                        cache_dir=args.cache_dir if args.cache_dir else None)
+        global_step = 0
+        if args.do_train:
 
-    if args.fp16:
-        model.half()
-    model.to(device)
-    if args.local_rank != -1:
-        try:
-            from apex.parallel import DistributedDataParallel as DDP
-        except ImportError:
-            raise ImportError(
-                "Please install apex from https://www.github.com/nvidia/apex to use distributed and fp16 training.")
-
-        model = DDP(model)
-    elif n_gpu > 1:
-        model = torch.nn.DataParallel(model)
-
-    # Prepare optimizer
-    if args.do_train:
-        param_optimizer = list(model.named_parameters())
-        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in param_optimizer if
-                        not any(nd in n for nd in no_decay)],
-             'weight_decay': 0.01},
-            {'params': [p for n, p in param_optimizer if
-                        any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
-        if args.fp16:
+            eval_examples = processor.get_dev_examples(args.data_dir)
+            cached_train_features_file = args.data_dir + '_{0}_{1}_{2}_{3}_{4}_{5}'.format(
+                list(filter(None, args.model_name_or_path.split('/'))).pop(),
+                "valid", str(args.task_name), str(args.max_seq_length),
+                str(args.max_utterance_num), str(args.cache_flag))
+            eval_features = None
             try:
-                from apex.optimizers import FP16_Optimizer
-                from apex.optimizers import FusedAdam
-            except ImportError:
-                raise ImportError(
-                    "Please install apex from https://www.github.com/nvidia/apex to use distributed and fp16 training.")
+                with open(cached_train_features_file, "rb") as reader:
+                    eval_features = pickle.load(reader)
+            except:
+                eval_features = convert_examples_to_features(
+                    eval_examples, label_list, args.max_seq_length,
+                    args.max_utterance_num, tokenizer, output_mode)
+                if args.local_rank == -1 or torch.distributed.get_rank() == 0:
+                    logger.info("  Saving eval features into cached file %s",
+                                cached_train_features_file)
+                    with open(cached_train_features_file, "wb") as writer:
+                        pickle.dump(eval_features, writer)
 
-            optimizer = FusedAdam(optimizer_grouped_parameters,
-                                  lr=args.learning_rate,
-                                  bias_correction=False,
-                                  max_grad_norm=1.0)
-            if args.loss_scale == 0:
-                optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
-            else:
-                optimizer = FP16_Optimizer(optimizer,
-                                           static_loss_scale=args.loss_scale)
-        else:
-            optimizer = AdamW(optimizer_grouped_parameters,
-                              lr=args.learning_rate, eps=args.adam_epsilon)
-
-    global_step = 0
-    if args.do_train:
-
-        eval_examples = processor.get_dev_examples(args.data_dir)
-        cached_train_features_file = args.data_dir + '_{0}_{1}_{2}_{3}_{4}_{5}'.format(
-            list(filter(None, args.model_name_or_path.split('/'))).pop(),
-            "valid", str(args.task_name), str(args.max_seq_length),
-            str(args.max_utterance_num), str(args.cache_flag))
-        eval_features = None
-        try:
-            with open(cached_train_features_file, "rb") as reader:
-                eval_features = pickle.load(reader)
-        except:
-            eval_features = convert_examples_to_features(
-                eval_examples, label_list, args.max_seq_length,
-                args.max_utterance_num, tokenizer, output_mode)
-            if args.local_rank == -1 or torch.distributed.get_rank() == 0:
-                logger.info("  Saving eval features into cached file %s",
-                            cached_train_features_file)
-                with open(cached_train_features_file, "wb") as writer:
-                    pickle.dump(eval_features, writer)
-
-        logger.info("***** Running evaluation *****")
-        logger.info("  Num examples = %d", len(eval_examples))
-        logger.info("  Batch size = %d", args.eval_batch_size)
-        all_input_ids = torch.tensor(select_field(eval_features, 'input_ids'),
-                                     dtype=torch.long)
-        all_input_mask = torch.tensor(select_field(eval_features, 'input_mask'),
-                                      dtype=torch.long)
-        all_segment_ids = torch.tensor(
-            select_field(eval_features, 'segment_ids'), dtype=torch.long)
-        all_doc_final_pos = torch.tensor(
-            select_field(eval_features, 'doc_final_pos'), dtype=torch.long)
-        all_sep_pos = torch.tensor(select_field(eval_features, 'sep_pos'),
-                                   dtype=torch.long)
-        all_turn_ids = torch.tensor(select_field(eval_features, 'turn_ids'),
-                                    dtype=torch.long)
-
-        if output_mode == "classification":
-            all_label_ids = torch.tensor([f.label for f in eval_features],
+            logger.info("***** Running evaluation *****")
+            logger.info("  Num examples = %d", len(eval_examples))
+            logger.info("  Batch size = %d", args.eval_batch_size)
+            all_input_ids = torch.tensor(select_field(eval_features, 'input_ids'),
                                          dtype=torch.long)
-        elif output_mode == "regression":
-            all_label_ids = torch.tensor([f.label for f in eval_features],
-                                         dtype=torch.float)
+            all_input_mask = torch.tensor(select_field(eval_features, 'input_mask'),
+                                          dtype=torch.long)
+            all_segment_ids = torch.tensor(
+                select_field(eval_features, 'segment_ids'), dtype=torch.long)
+            all_doc_final_pos = torch.tensor(
+                select_field(eval_features, 'doc_final_pos'), dtype=torch.long)
+            all_sep_pos = torch.tensor(select_field(eval_features, 'sep_pos'),
+                                       dtype=torch.long)
+            all_turn_ids = torch.tensor(select_field(eval_features, 'turn_ids'),
+                                        dtype=torch.long)
 
-        eval_data = TensorDataset(all_input_ids, all_input_mask,
-                                  all_segment_ids, all_sep_pos, all_turn_ids,
-                                  all_label_ids, all_doc_final_pos)
-        # Run prediction for full data
+            if output_mode == "classification":
+                all_label_ids = torch.tensor([f.label for f in eval_features],
+                                             dtype=torch.long)
+            elif output_mode == "regression":
+                all_label_ids = torch.tensor([f.label for f in eval_features],
+                                             dtype=torch.float)
 
-        eval_sampler = SequentialSampler(eval_data)
-        eval_dataloader = DataLoader(eval_data, sampler=eval_sampler,
-                                     batch_size=args.eval_batch_size)
+            eval_data = TensorDataset(all_input_ids, all_input_mask,
+                                      all_segment_ids, all_sep_pos, all_turn_ids,
+                                      all_label_ids, all_doc_final_pos)
+            # Run prediction for full data
 
-        # model.load_state_dict(torch.load(args.model_path))
+            eval_sampler = SequentialSampler(eval_data)
+            eval_dataloader = DataLoader(eval_data, sampler=eval_sampler,
+                                         batch_size=args.eval_batch_size)
 
-        model.eval()
-        eval_loss = []
-        nb_eval_steps = 0
-        preds = None
-        progress_bar_eval = tqdm(eval_dataloader, desc="Evaluating")
-        for j, batch in enumerate(progress_bar_eval):
-            batch = tuple(t.to(device) for t in batch)
+            model_path = ["../model/1_pytorch_model.bin",
+                    "../model/mdfn.bin",
+                          "../model/7_pytorch_model_v2.bin",
+                          "../model/5_pytorch_model_v3_add.bin"]
 
-            with torch.no_grad():
-                inputs = {'input_ids': batch[0],
-                          'attention_mask': batch[1],
-                          'token_type_ids': batch[2] if args.model_type in [
-                              'bert', 'xlnet', 'albert'] else None,
-                          # XLM don't use segment_ids
-                          'sep_pos': batch[3],
-                          'turn_ids': batch[4],
-                          'labels': batch[5],
-                          'doc_final_pos': batch[6]
-                          }
-                # outputs = eval_model(**inputs)
-                outputs = model(**inputs)
-                tmp_eval_loss, logits = outputs[:2]
-                if torch.isnan(tmp_eval_loss).any() or torch.isnan(logits).any():
-                    print("Epoch {} evaluation: NaN happens".format(j))
-                    print(logits)
-                    raise ValueError()
-                cur_loss = tmp_eval_loss.detach().mean().item()
-                progress_bar_eval.set_description("Evaulation loss: {}, Iteration {}".format(cur_loss, j))
-                eval_loss.append(cur_loss)
+            model.load_state_dict(torch.load(model_path[i]))
+            model.to(device)
+            model.eval()
+            eval_loss = []
+            nb_eval_steps = 0
+            preds = None
+            progress_bar_eval = tqdm(eval_dataloader, desc="Evaluating")
+            for j, batch in enumerate(progress_bar_eval):
+                batch = tuple(t.to(device) for t in batch)
 
-            nb_eval_steps += 1
-            if preds is None:
-                preds = logits.detach().cpu().numpy()
-                out_label_ids = inputs['labels'].detach().cpu().numpy()
-            else:
-                preds = np.append(preds, logits.detach().cpu().numpy(),
-                                  axis=0)
-                out_label_ids = np.append(out_label_ids, inputs[
-                    'labels'].detach().cpu().numpy(), axis=0)
+                with torch.no_grad():
+                    inputs = {'input_ids': batch[0],
+                              'attention_mask': batch[1],
+                              'token_type_ids': batch[2] if args.model_type in [
+                                  'bert', 'xlnet', 'albert'] else None,
+                              # XLM don't use segment_ids
+                              'sep_pos': batch[3],
+                              'turn_ids': batch[4],
+                              'labels': batch[5]}
+                    if i != 1:
+                        inputs['doc_final_pos'] = batch[6]
 
-        mean_eval_loss = np.mean(eval_loss)
-        std_eval_loss = np.std(eval_loss)
-        max_eval_loss = np.max(eval_loss)
-        min_eval_loss = np.min(eval_loss)
+                    # outputs = eval_model(**inputs)
+                    outputs = model(**inputs)
+                    tmp_eval_loss, logits = outputs[:2]
+                    if torch.isnan(tmp_eval_loss).any() or torch.isnan(logits).any():
+                        print("Epoch {} evaluation: NaN happens".format(j))
+                        print(logits)
+                        raise ValueError()
+                    cur_loss = tmp_eval_loss.detach().mean().item()
+                    progress_bar_eval.set_description("Evaulation loss: {}, Iteration {}".format(cur_loss, j))
+                    eval_loss.append(cur_loss)
 
-        result = compute_metrics(task_name, preds, out_label_ids)
-        # loss = tr_loss / nb_tr_steps if args.do_train else None
+                nb_eval_steps += 1
+                if preds is None:
+                    preds = logits.detach().cpu().numpy()
+                    out_label_ids = inputs['labels'].detach().cpu().numpy()
+                else:
+                    preds = np.append(preds, logits.detach().cpu().numpy(),
+                                      axis=0)
+                    out_label_ids = np.append(out_label_ids, inputs[
+                        'labels'].detach().cpu().numpy(), axis=0)
+            total_eval_loss.append(eval_loss)
+            mean_eval_loss = np.mean(eval_loss)
+            std_eval_loss = np.std(eval_loss)
+            max_eval_loss = np.max(eval_loss)
+            min_eval_loss = np.min(eval_loss)
 
-        result['mean_eval_loss'] = mean_eval_loss
-        result['std_eval_loss'] = std_eval_loss
-        result['min_loss'] = min_eval_loss
-        result['max_loss'] = max_eval_loss
-        result['global_step'] = global_step
-        # result['loss'] = loss
+            result = compute_metrics(task_name, preds, out_label_ids)
+            # loss = tr_loss / nb_tr_steps if args.do_train else None
 
-        output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
-        with open(output_eval_file, "a") as writer:
-            logger.info("***** Eval results *****")
-            for key in sorted(result.keys()):
-                logger.info("  %s = %s", key, str(result[key]))
-                writer.write("%s = %s\n" % (key, str(result[key])))
+            result['mean_eval_loss'] = mean_eval_loss
+            result['std_eval_loss'] = std_eval_loss
+            result['min_loss'] = min_eval_loss
+            result['max_loss'] = max_eval_loss
+            result['global_step'] = global_step
+            # result['loss'] = loss
+
+            output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
+            with open(output_eval_file, "a") as writer:
+                logger.info("***** Eval results *****")
+                for key in sorted(result.keys()):
+                    logger.info("  %s = %s", key, str(result[key]))
+                    writer.write("%s = %s\n" % (key, str(result[key])))
+
+    x = [i + 1 for i in range(len(total_eval_loss[0]))]
+    y = total_eval_loss
+    plt.xlabel("Sample Index")
+    plt.ylabel("Prediction Loss")
+    plt.title("Loss Value scatter points")
+    for i in range(len(y[0])):
+        plt.plot(x, y[i],label = 'id %s'%i)
+    plt.legend()
+    plt.savefig("loss.png")
 
 
 if __name__ == "__main__":
