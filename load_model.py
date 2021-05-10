@@ -42,13 +42,12 @@ from modeling.modeling_v4 import (ElectraForMultipleChoicePlusV4)
 
 logger = logging.getLogger(__name__)
 
-MODEL_CLASSES = OrderedDict({
+MODEL_CLASSES = {
     'electra_v3': (ElectraConfig, ElectraForMultipleChoicePlusV3, ElectraTokenizer),
     'electra_v1': (ElectraConfig, ElectraForMultipleChoicePlus, ElectraTokenizer),
     'electra_v2': (ElectraConfig, ElectraForMultipleChoicePlusV2, ElectraTokenizer),
     'electra_v4': (ElectraConfig, ElectraForMultipleChoicePlusV4, ElectraTokenizer)
-})
-
+}
 
 def select_field(features, field):
     return [
@@ -858,7 +857,11 @@ def main():
     label_list = processor.get_labels()
     num_labels = len(label_list)
     total_eval_loss = []
-    for i, (config_class, model_class, tokenizer_class) in enumerate(MODEL_CLASSES.values()):
+    model_path = {"electra_v1": "../model/mdfn.bin",
+                  "electra_v2": "../model/7_pytorch_model_v2.bin",
+                 "electra_v3":"../model/1_pytorch_model.bin",
+                 "electra_v4": "../model/5_pytorch_model_v3_add.bin"}
+    for i, (key, (config_class, model_class, tokenizer_class)) in enumerate(MODEL_CLASSES.items()):
 
         config = config_class.from_pretrained(args.model_name_or_path,
                                               num_labels=num_labels,
@@ -927,12 +930,9 @@ def main():
             eval_dataloader = DataLoader(eval_data, sampler=eval_sampler,
                                          batch_size=args.eval_batch_size)
 
-            model_path = ["../model/1_pytorch_model.bin",
-                    "../model/mdfn.bin",
-                          "../model/7_pytorch_model_v2.bin",
-                          "../model/5_pytorch_model_v3_add.bin"]
 
-            model.load_state_dict(torch.load(model_path[i]))
+            print(key, model_path[key])
+            model.load_state_dict(torch.load(model_path[key]))
             model.to(device)
             model.eval()
             eval_loss = []
@@ -1002,7 +1002,7 @@ def main():
     plt.xlabel("Sample Index")
     plt.ylabel("Prediction Loss")
     plt.title("Loss Value scatter points")
-    for i in range(len(y[0])):
+    for i in range(len(4)):
         plt.plot(x, y[i],label = 'id %s'%i)
     plt.legend()
     plt.savefig("loss.png")
