@@ -36,13 +36,15 @@ from transformers import ElectraConfig, ElectraTokenizer, AdamW
 from modeling.modeling_v1 import (ElectraForMultipleChoicePlus)
 from modeling.modeling_v2 import (ElectraForMultipleChoicePlusV2)
 from modeling.modeling_v3 import (ElectraForMultipleChoicePlusV3)
+from modeling.modeling_v4 import (ElectraForMultipleChoicePlusV4)
 
 logger = logging.getLogger(__name__)
 
 MODEL_CLASSES = {
     'electra_v1': (ElectraConfig, ElectraForMultipleChoicePlus, ElectraTokenizer),
     'electra_v2': (ElectraConfig, ElectraForMultipleChoicePlusV2, ElectraTokenizer),
-    'electra_v3': (ElectraConfig, ElectraForMultipleChoicePlusV3, ElectraTokenizer)
+    'electra_v3': (ElectraConfig, ElectraForMultipleChoicePlusV3, ElectraTokenizer),
+    'electra_v4': (ElectraConfig, ElectraForMultipleChoicePlusV4, ElectraTokenizer)
 }
 
 
